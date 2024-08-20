@@ -9,8 +9,8 @@ find_package(Vulkan REQUIRED)
 
 set(SOURCES
   main.cpp
-  vulkan_renderer.h
-  vulkan_renderer.cpp
+  VulkanComputeManager.hpp
+  VulkanComputeManager.cpp
 )
 
 
