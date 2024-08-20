@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+
 VulkanComputeManager::VulkanComputeManager() {
   // Init Vulkan instance
   createInstance();
@@ -12,7 +14,7 @@ VulkanComputeManager::VulkanComputeManager() {
 
   createLogicalDevice();
 
-  loadShader("shaders/warpPolarCompute.spv");
+  loadComputeShader("shaders/warpPolarCompute.spv");
 }
 
 void VulkanComputeManager::createInstance() {
@@ -205,7 +207,7 @@ void VulkanComputeManager::createLogicalDevice() {
   fmt::println("Created Vulkan logical device and compute queue.");
 }
 
-void VulkanComputeManager::loadShader(const char *filename) {
+auto readFile(const char *filename) {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open shader file");
@@ -216,16 +218,37 @@ void VulkanComputeManager::loadShader(const char *filename) {
   file.seekg(0);
   file.read(buffer.data(), fileSize);
   file.close();
+  return buffer;
+}
+
+VkShaderModule
+VulkanComputeManager::createShaderModule(const std::vector<char> &shaderCode) {
 
   VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  createInfo.codeSize = buffer.size();
-  createInfo.pCode = reinterpret_cast<const uint32_t *>(buffer.data());
+  createInfo.codeSize = shaderCode.size();
+  createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
 
-  if (vkCreateShaderModule(device, &createInfo, nullptr,
-                           &computeShaderModule) != VK_SUCCESS) {
+  VkShaderModule shaderModule{};
+  if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) !=
+      VK_SUCCESS) {
     throw std::runtime_error("Failed to create shader module!");
   }
+
+  return shaderModule;
+}
+
+void VulkanComputeManager::loadComputeShader(const char *filename) {
+  const auto buffer = readFile(filename);
+
+  auto computeShaderModule = createShaderModule(buffer);
+
+  VkPipelineShaderStageCreateInfo computeShaderStageInfo{};
+  computeShaderStageInfo.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  computeShaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  computeShaderStageInfo.module = computeShaderModule;
+  computeShaderStageInfo.pName = "main";
 
   fmt::print("Successfully loaded shader {}.", filename);
 }

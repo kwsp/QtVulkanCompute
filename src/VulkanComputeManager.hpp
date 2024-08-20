@@ -28,7 +28,6 @@ private:
   VkQueue computeQueue{};
 
   VkPipeline computePipeline{};
-  VkShaderModule computeShaderModule{};
 
   const std::vector<const char *> validationLayers = {
       "VK_LAYER_KHRONOS_validation"};
@@ -58,7 +57,8 @@ private:
   void createLogicalDevice();
 
   /* Load shaders */
-  void loadShader(const char *filename);
+  void loadComputeShader(const char *filename);
+  VkShaderModule createShaderModule(const std::vector<char> &computeShaderCode);
 
   /* Cleanup */
   void cleanup();
