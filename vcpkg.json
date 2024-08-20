@@ -5,8 +5,7 @@
   "dependencies": [
     "fmt",
     {
-      "name": "qtbase",
-      "features": ["vulkan"]
+      "name": "qtbase"
     },
     "vulkan"
   ]
