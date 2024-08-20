@@ -7,6 +7,12 @@
     {
       "name": "qtbase"
     },
-    "vulkan"
+    "vulkan",
+    {
+      "name": "glslang",
+      "features": [
+        "tools"
+      ]
+    }
   ]
 }
