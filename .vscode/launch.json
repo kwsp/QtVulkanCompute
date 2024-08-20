@@ -25,7 +25,7 @@
                     "value": "${command:cmake.buildDirectory}/vcpkg_installed/x64-windows/bin"
                 }
             ],
-            "externalConsole": false
+            "console": false
         }
     ]
 }
