@@ -20,10 +20,14 @@ public:
 private:
   // QVulkanInstance vulkanInstance;
   VkInstance vulkanInstance{};
+
   VkPhysicalDevice physicalDevice{};
   std::string physicalDeviceName;
 
-  VkPipeline computePipelinne{};
+  VkDevice device;
+  VkQueue computeQueue;
+
+  VkPipeline computePipeline{};
   VkShaderModule computeShaderModule{};
 
   const std::vector<const char *> validationLayers = {
@@ -35,9 +39,11 @@ private:
   const bool enableValidationLayers = true;
 #endif
 
+  /* Create Instance */
   void createInstance();
   bool checkValidationLayerSupport();
 
+  /* Find physical device */
   // Select a graphics card in the system that supports the features we need.
   // Stick to the first suitable card we find.
   void pickPhysicalDevice();
@@ -48,7 +54,12 @@ private:
   };
   static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
+  /* Create logical device */
+  void createLogicalDevice();
+
+  /* Load shaders */
   void loadShader(const char *filename);
 
+  /* Cleanup */
   void cleanup();
 };

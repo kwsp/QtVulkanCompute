@@ -10,6 +10,8 @@ VulkanComputeManager::VulkanComputeManager() {
 
   pickPhysicalDevice();
 
+  createLogicalDevice();
+
   // loadShader("shaders/warpPolarCompute.spv");
 }
 
@@ -168,6 +170,41 @@ VulkanComputeManager::findQueueFamilies(VkPhysicalDevice device) {
   return indices;
 }
 
+void VulkanComputeManager::createLogicalDevice() {
+  // Specify the queues to be created
+  const auto indices = findQueueFamilies(physicalDevice);
+
+  VkDeviceQueueCreateInfo queueCreateInfo{};
+  queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
+  queueCreateInfo.queueCount = 1;
+
+  float queuePriority = 1.0F;
+  queueCreateInfo.pQueuePriorities = &queuePriority;
+
+  // Specifiy used device features
+  VkPhysicalDeviceFeatures deviceFeatures{};
+
+  // Create the logical device
+  VkDeviceCreateInfo createInfo{};
+  createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+  // Add pointers to the queue creation info and device features structs
+  createInfo.pQueueCreateInfos = &queueCreateInfo;
+  createInfo.queueCreateInfoCount = 1;
+
+  createInfo.pEnabledFeatures = &deviceFeatures;
+
+  if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("Failed to create logical device!");
+  }
+
+  vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &computeQueue);
+
+  fmt::println("Created Vulkan logical device and compute queue.");
+}
+
 void VulkanComputeManager::loadShader(const char *filename) {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
@@ -192,6 +229,10 @@ void VulkanComputeManager::loadShader(const char *filename) {
 }
 
 void VulkanComputeManager::cleanup() {
+  if (device != nullptr) {
+    vkDestroyDevice(device, nullptr);
+  }
+
   if (vulkanInstance != nullptr) {
     vkDestroyInstance(vulkanInstance, nullptr);
   }
