@@ -13,6 +13,9 @@ set(SOURCES
   vulkan_renderer.cpp
 )
 
+
+set(ENV{VK_ADD_LAYER_PATH} "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
+
 add_executable(${EXE_NAME}
   ${SOURCES}
 )
