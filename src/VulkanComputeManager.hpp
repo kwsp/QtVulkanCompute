@@ -24,8 +24,8 @@ private:
   VkPhysicalDevice physicalDevice{};
   std::string physicalDeviceName;
 
-  VkDevice device;
-  VkQueue computeQueue;
+  VkDevice device{};
+  VkQueue computeQueue{};
 
   VkPipeline computePipeline{};
   VkShaderModule computeShaderModule{};

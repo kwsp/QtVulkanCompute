@@ -12,7 +12,7 @@ VulkanComputeManager::VulkanComputeManager() {
 
   createLogicalDevice();
 
-  // loadShader("shaders/warpPolarCompute.spv");
+  loadShader("shaders/warpPolarCompute.spv");
 }
 
 void VulkanComputeManager::createInstance() {
@@ -37,7 +37,7 @@ void VulkanComputeManager::createInstance() {
     createInfo.enabledLayerCount = 0;
   }
 
-  auto ret = vkCreateInstance(&createInfo, nullptr, &vulkanInstance);
+  const auto ret = vkCreateInstance(&createInfo, nullptr, &vulkanInstance);
   if (ret != VK_SUCCESS) {
     throw std::runtime_error("Failed to create Vulkan instance!");
   }
@@ -222,10 +222,12 @@ void VulkanComputeManager::loadShader(const char *filename) {
   createInfo.codeSize = buffer.size();
   createInfo.pCode = reinterpret_cast<const uint32_t *>(buffer.data());
 
-  //   if (vkCreateShaderModule(physicalDevice, &createInfo, nullptr,
-  //                            &computeShaderModule) != VK_SUCCESS) {
-  //     throw std::runtime_error("Failed to create shader module!");
-  //   }
+  if (vkCreateShaderModule(device, &createInfo, nullptr,
+                           &computeShaderModule) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create shader module!");
+  }
+
+  fmt::print("Successfully loaded shader {}.", filename);
 }
 
 void VulkanComputeManager::cleanup() {
