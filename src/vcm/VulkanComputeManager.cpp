@@ -8,6 +8,8 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+namespace vcm {
+
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 VulkanComputeManager::VulkanComputeManager() {
@@ -277,3 +279,5 @@ void VulkanComputeManager::cleanup() {
     vkDestroyInstance(vulkanInstance, nullptr);
   }
 }
+
+} // namespace vcm

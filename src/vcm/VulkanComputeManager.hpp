@@ -6,6 +6,8 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 
+namespace vcm {
+
 class VulkanComputeManager {
 public:
   VulkanComputeManager();
@@ -83,3 +85,5 @@ private:
   /* Cleanup */
   void cleanup();
 };
+
+} // namespace vcm
