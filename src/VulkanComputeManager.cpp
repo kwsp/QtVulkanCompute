@@ -1,8 +1,12 @@
 #include "VulkanComputeManager.hpp"
+#include "vulkan/vulkan_core.h"
+#include <array>
+#include <fmt/format.h>
 #include <fstream>
 #include <map>
 #include <stdexcept>
-#include <vulkan/vulkan_core.h>
+#include <vector>
+#include <vulkan/vulkan.h>
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -39,25 +43,28 @@ void VulkanComputeManager::createInstance() {
     createInfo.enabledLayerCount = 0;
   }
 
+  std::vector<const char *> instanceExtensions;
+
+// Enable VK_KHR_portability_enumeration for molten-vk on M-series mac
+#ifdef __APPLE__
+  // Tested for M series mac
+  fmt::println("On macOS with molten-vk, enable "
+               "VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME");
+  instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+  createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
+
+  createInfo.enabledExtensionCount =
+      static_cast<uint32_t>(instanceExtensions.size());
+  createInfo.ppEnabledExtensionNames = instanceExtensions.data();
+
   const auto ret = vkCreateInstance(&createInfo, nullptr, &vulkanInstance);
   if (ret != VK_SUCCESS) {
+    fmt::println("Failed to create Vulkan instance! Code: {}",
+                 static_cast<int32_t>(ret));
     throw std::runtime_error("Failed to create Vulkan instance!");
   }
   fmt::println("Created Vulkan instance.");
-
-  // check for extension support
-  {
-    uint32_t extensionCount = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-    std::vector<VkExtensionProperties> extensions(extensionCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
-                                           extensions.data());
-    fmt::print("Available Vulkan extensions:\n");
-    for (const auto &extension : extensions) {
-      fmt::print("\t{}\n", extension.extensionName);
-    }
-  }
 }
 
 bool VulkanComputeManager::checkValidationLayerSupport() {
@@ -99,11 +106,6 @@ int VulkanComputeManager::rateDeviceSuitability(VkPhysicalDevice device) {
   // Maximum possible size of textures affects graphics quality
   score += deviceProperties.limits.maxImageDimension2D;
 
-  // Application can't function without geometry shaders
-  if (!deviceFeatures.geometryShader) {
-    return 0;
-  }
-
   // Need compute bit
   const auto indices = findQueueFamilies(device);
   if (!indices.computeFamily.has_value()) {
@@ -130,7 +132,7 @@ void VulkanComputeManager::pickPhysicalDevice() {
   // A sorted associative container to rank candidates by increasing score
   std::multimap<int, VkPhysicalDevice> candidates;
   for (const auto &device : devices) {
-    int score = rateDeviceSuitability(device);
+    const int score = rateDeviceSuitability(device);
     candidates.insert({score, device});
   }
 
@@ -197,6 +199,17 @@ void VulkanComputeManager::createLogicalDevice() {
 
   createInfo.pEnabledFeatures = &deviceFeatures;
 
+  // Device extensions used
+  std::vector<const char *> deviceExtensions;
+#ifdef __APPLE__
+  {
+    // VK_KHR_portability_subset
+    deviceExtensions.push_back("VK_KHR_portability_subset");
+  }
+#endif
+  createInfo.enabledExtensionCount = deviceExtensions.size();
+  createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
   if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
       VK_SUCCESS) {
     throw std::runtime_error("Failed to create logical device!");
@@ -250,7 +263,9 @@ void VulkanComputeManager::loadComputeShader(const char *filename) {
   computeShaderStageInfo.module = computeShaderModule;
   computeShaderStageInfo.pName = "main";
 
-  fmt::print("Successfully loaded shader {}.", filename);
+  fmt::print("Successfully loaded shader {}.\n", filename);
+
+  vkDestroyShaderModule(device, computeShaderModule, nullptr);
 }
 
 void VulkanComputeManager::cleanup() {

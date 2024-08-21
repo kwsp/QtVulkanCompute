@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <optional>
 #include <string>
 #include <vector>
@@ -16,6 +16,26 @@ public:
   VulkanComputeManager &operator=(VulkanComputeManager &&) = delete;
 
   ~VulkanComputeManager() { cleanup(); }
+
+  static auto queryInstanceExtensionSupport() {
+    // check for extension support
+
+    uint32_t extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
+                                           extensions.data());
+    return extensions;
+  }
+  static void printInstanceExtensionSupport() {
+    const auto extensions = queryInstanceExtensionSupport();
+
+    fmt::print("Available Vulkan extensions:\n");
+    for (const auto &extension : extensions) {
+      fmt::print("\t{}\n", extension.extensionName);
+    }
+  }
 
 private:
   // QVulkanInstance vulkanInstance;
