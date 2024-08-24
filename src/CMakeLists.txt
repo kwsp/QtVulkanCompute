@@ -2,6 +2,7 @@ set(EXE_NAME main)
 
 find_package(fmt CONFIG REQUIRED)
 find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+find_package(Armadillo CONFIG REQUIRED)
 
 add_subdirectory(shaders)
 
@@ -21,6 +22,8 @@ add_executable(${EXE_NAME}
 )
 
 target_link_libraries(${EXE_NAME} PRIVATE
+  fmt::fmt
+  armadillo
   Vulkan::Vulkan
   Qt6::Core
   Qt6::Gui
@@ -34,6 +37,19 @@ set_target_properties(${EXE_NAME} PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-target_link_libraries(${EXE_NAME} PRIVATE
+
+add_executable(add
+  mainAdd.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
+)
+target_link_libraries(add PRIVATE
   fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+)
+add_dependencies(add compile_shaders)
+set_target_properties(add PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
 )
