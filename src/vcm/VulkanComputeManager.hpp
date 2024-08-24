@@ -1,13 +1,12 @@
 #pragma once
 
-#include "vulkan/vulkan_core.h"
 #include <fmt/format.h>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan.hpp>
 
 namespace vcm {
 
@@ -84,6 +83,7 @@ public:
   // Command pool
   // Manage the memory that is used to store the buffers and command buffers are
   // allocated from them
+  // Command pool should be thread local
   VkCommandPool commandPool;
 
   // Command buffer
@@ -95,13 +95,13 @@ public:
   // Discriptor sets for buffers are allocated from this
   VkDescriptorPool descriptorPool;
 
-  const std::vector<const char *> validationLayers = {
-      "VK_LAYER_KHRONOS_validation"};
+  static constexpr std::array<const char *, 1> validationLayers = {
+      {"VK_LAYER_KHRONOS_validation"}};
 
 #ifdef NDEBUG
-  const bool enableValidationLayers = false;
+  static constexpr bool enableValidationLayers = false;
 #else
-  const bool enableValidationLayers = true;
+  static constexpr bool enableValidationLayers = true;
 #endif
 
   /* Create Instance */
