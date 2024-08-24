@@ -83,6 +83,8 @@ public:
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);

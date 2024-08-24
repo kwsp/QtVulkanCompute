@@ -1,7 +1,7 @@
 #include "vcm/VulkanComputeManager.hpp"
-#include "vulkan/vulkan_core.h"
 #include <fmt/core.h>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -198,13 +198,30 @@ std::vector<float> retrieveOutput(VkDevice device, VkDeviceMemory outputMemory,
   return outputData;
 }
 
+// Function to transfer data from a std::vector to a Vulkan staging buffer
+template <typename T>
+void transferDataToStagingBuffer(VkDevice device,
+                                 vcm::VulkanBuffer &stagingBuffer,
+                                 std::span<const T> data) {
+  // Step 1: Map the memory associated with the staging buffer
+  void *mappedMemory{};
+  vkMapMemory(device, stagingBuffer.memory, 0, data.size() * sizeof(T), 0,
+              &mappedMemory);
+
+  // Step 2: Copy data from the vector to the mapped memory
+  memcpy(mappedMemory, data.data(), data.size() * sizeof(T));
+
+  // Step 3: Unmap the memory so the GPU can access it
+  vkUnmapMemory(device, stagingBuffer.memory);
+}
+
 int main() {
   const uint32_t WIDTH = 512;
   const uint32_t HEIGHT = 512;
 
   vcm::VulkanComputeManager cm;
-  ComputeShaderResources resources;
-  ComputeShaderBuffers buffers;
+  ComputeShaderResources resources{};
+  ComputeShaderBuffers buffers{};
 
   /*
   Create buffers
@@ -302,6 +319,18 @@ int main() {
   dispatchComputeShader(cm, resources, WIDTH, HEIGHT);
   vkEndCommandBuffer(cm.commandBuffer);
 
+  // Copy data to staging buffers
+  std::vector<float> input1(WIDTH * HEIGHT, 1);
+  std::vector<float> input2(WIDTH * HEIGHT, 2);
+  transferDataToStagingBuffer<float>(cm.device, buffers.stagingBuffer1, input1);
+  transferDataToStagingBuffer<float>(cm.device, buffers.stagingBuffer2, input2);
+
+  // Copy data from staging to host buffers
+  cm.copyBuffer(buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
+                bufferSize);
+  cm.copyBuffer(buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
+                bufferSize);
+
   // Submit the command buffer to the compute queue
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -310,19 +339,22 @@ int main() {
   vkQueueSubmit(cm.queue, 1, &submitInfo, VK_NULL_HANDLE);
   vkQueueWaitIdle(cm.queue);
 
+  // Copy data back to staging
+  cm.copyBuffer(buffers.buffer3.buffer, buffers.stagingBuffer3.buffer,
+                bufferSize);
+
   std::vector<float> outputData =
       retrieveOutput(cm.device, buffers.stagingBuffer3.memory, bufferSize);
 
   // Verify that each element in the output matrix is 3.0f
-  bool isCorrect = verifyOutput(outputData, 3.0f);
+  bool isCorrect = verifyOutput(outputData, 3.0F);
   if (isCorrect) {
     std::cout << "The output is correct!\n";
   } else {
     std::cout << "The output is incorrect.\n";
   }
 
-  // Cleanup (omitting details for brevity)
-  // ...
+  // Cleanup
   cm.destroyBuffer(buffers.buffer1);
   cm.destroyBuffer(buffers.buffer2);
   cm.destroyBuffer(buffers.buffer3);
