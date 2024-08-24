@@ -27,41 +27,27 @@ public:
 
   ~VulkanComputeManager() { cleanup(); }
 
-  static auto queryInstanceExtensionSupport() {
-    // check for extension support
+  static auto queryInstanceExtensionSupport()
+      -> std::vector<VkExtensionProperties>;
+  static void printInstanceExtensionSupport();
 
-    uint32_t extensionCount = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-    std::vector<VkExtensionProperties> extensions(extensionCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
-                                           extensions.data());
-    return extensions;
-  }
-
-  static void printInstanceExtensionSupport() {
-    const auto extensions = queryInstanceExtensionSupport();
-
-    fmt::print("Available Vulkan extensions:\n");
-    for (const auto &extension : extensions) {
-      fmt::print("\t{}\n", extension.extensionName);
-    }
-  }
-
+  // Create buffer helpers
   void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                    VkDeviceMemory &bufferMemory);
+                    VkDeviceMemory &bufferMemory) const;
   void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                    VkMemoryPropertyFlags properties, VulkanBuffer &buf) {
+                    VkMemoryPropertyFlags properties, VulkanBuffer &buf) const {
     createBuffer(size, usage, properties, buf.buffer, buf.memory);
   }
-  VulkanBuffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                            VkMemoryPropertyFlags properties) {
+  [[nodiscard]] VulkanBuffer
+  createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+               VkMemoryPropertyFlags properties) const {
     VulkanBuffer buf{};
     createBuffer(size, usage, properties, buf.buffer, buf.memory);
     return buf;
   }
 
+  // Destroy buffer helpers
   void destroyBuffer(VkBuffer &buffer, VkDeviceMemory &memory) const {
     vkDestroyBuffer(device, buffer, nullptr);
     vkFreeMemory(device, memory, nullptr);
@@ -70,49 +56,17 @@ public:
     destroyBuffer(buffer.buffer, buffer.memory);
   }
 
-  void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
-                  VkDeviceSize size) const {
-    // Memory transfer ops are executed using command buffers.
-    // We must first allocate a temporary command buffer.
-    // We can create a short-lived command pool for this because the
-    // implementation may be able to apply memory allocation optimizations.
-    // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
-    // pool creation
+  // If commandBuffer is provided, use it and only record
+  // else allocate a temporary command buffer
+  void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
+                  VkCommandBuffer commandBuffer = VK_NULL_HANDLE) const;
 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-    // Immediately start recording the command buffer
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    VkBufferCopy copyRegion{};
-    copyRegion.srcOffset = 0; // Optional
-    copyRegion.dstOffset = 0; // Optional
-    copyRegion.size = size;
-    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(queue);
-
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-  }
+  struct CopyBufferT {
+    VkBuffer src;
+    VkBuffer dst;
+    VkDeviceSize size;
+  };
+  void copyBuffers(std::span<CopyBufferT> buffersToCopy) const;
 
   // private:
   // QVulkanInstance vulkanInstance;

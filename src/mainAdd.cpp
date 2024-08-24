@@ -1,4 +1,6 @@
+#include "timeit.hpp"
 #include "vcm/VulkanComputeManager.hpp"
+#include <cstddef>
 #include <fmt/core.h>
 #include <iostream>
 #include <span>
@@ -216,8 +218,8 @@ void transferDataToStagingBuffer(VkDevice device,
 }
 
 int main() {
-  const uint32_t WIDTH = 512;
-  const uint32_t HEIGHT = 512;
+  const uint32_t WIDTH = 512 * 2;
+  const uint32_t HEIGHT = 512 * 2;
 
   vcm::VulkanComputeManager cm;
   ComputeShaderResources resources{};
@@ -308,50 +310,112 @@ int main() {
 
   createComputePipeline(cm, resources);
 
-  // Record the command buffer
-  VkCommandBufferBeginInfo commandBufferBeginInfo{};
-  commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  if (vkBeginCommandBuffer(cm.commandBuffer, &commandBufferBeginInfo) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to begin command buffer!");
-  }
-  dispatchComputeShader(cm, resources, WIDTH, HEIGHT);
-  vkEndCommandBuffer(cm.commandBuffer);
-
   // Copy data to staging buffers
   std::vector<float> input1(WIDTH * HEIGHT, 1);
   std::vector<float> input2(WIDTH * HEIGHT, 2);
   transferDataToStagingBuffer<float>(cm.device, buffers.stagingBuffer1, input1);
   transferDataToStagingBuffer<float>(cm.device, buffers.stagingBuffer2, input2);
 
-  // Copy data from staging to host buffers
-  cm.copyBuffer(buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
-                bufferSize);
-  cm.copyBuffer(buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
-                bufferSize);
+  {
+    uspam::TimeIt<true> timeit(
+        "Total execution from recording command buffer to wait queue.");
 
-  // Submit the command buffer to the compute queue
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &cm.commandBuffer;
-  vkQueueSubmit(cm.queue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(cm.queue);
+    // Record the command buffer
+    VkCommandBufferBeginInfo commandBufferBeginInfo{};
+    commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    if (vkBeginCommandBuffer(cm.commandBuffer, &commandBufferBeginInfo) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("Failed to begin command buffer!");
+    }
 
-  // Copy data back to staging
-  cm.copyBuffer(buffers.buffer3.buffer, buffers.stagingBuffer3.buffer,
-                bufferSize);
+    // // Copy data from staging to host buffers
+    // {
+    //   // Synchronous copy
+    //   uspam::TimeIt<true> timeit("Copy buffer");
+    //   cm.copyBuffer(buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
+    //                 bufferSize);
+    //   cm.copyBuffer(buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
+    //                 bufferSize);
+
+    //   std::array<vcm::VulkanComputeManager::CopyBufferT, 2> buffersToCopy = {
+    //       {{buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
+    //       bufferSize},
+    //        {buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
+    //         bufferSize}}};
+
+    //   cm.copyBuffers(buffersToCopy);
+    // }
+
+    {
+      // Async copy with barrier
+      cm.copyBuffer(buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
+                    bufferSize, cm.commandBuffer);
+      cm.copyBuffer(buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
+                    bufferSize, cm.commandBuffer);
+
+      VkMemoryBarrier memoryBarrier = {};
+      memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+      memoryBarrier.srcAccessMask =
+          VK_ACCESS_TRANSFER_WRITE_BIT; // After copying
+      memoryBarrier.dstAccessMask =
+          VK_ACCESS_SHADER_READ_BIT; // Before compute shader reads
+
+      vkCmdPipelineBarrier(
+          cm.commandBuffer,
+          VK_PIPELINE_STAGE_TRANSFER_BIT, // Source stage: after the transfer
+                                          // operation
+          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // Destination stage: before the
+          // compute shader
+          0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+    }
+
+    dispatchComputeShader(cm, resources, WIDTH, HEIGHT);
+
+    {
+
+      // (Optional) Step 4: Insert another pipeline barrier if needed
+      VkMemoryBarrier memoryBarrier = {};
+      memoryBarrier.srcAccessMask =
+          VK_ACCESS_SHADER_WRITE_BIT; // After compute shader writes
+      memoryBarrier.dstAccessMask =
+          VK_ACCESS_TRANSFER_READ_BIT; // Before transfer reads
+
+      vkCmdPipelineBarrier(
+          cm.commandBuffer,
+          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // Source stage: after compute
+                                                // shader
+          VK_PIPELINE_STAGE_TRANSFER_BIT, // Destination stage: before the next
+                                          // transfer operation
+          0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
+      // Copy result back to staging
+      cm.copyBuffer(buffers.buffer3.buffer, buffers.stagingBuffer3.buffer,
+                    bufferSize, cm.commandBuffer);
+    }
+
+    vkEndCommandBuffer(cm.commandBuffer);
+
+    // Submit the command buffer to the compute queue
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cm.commandBuffer;
+    vkQueueSubmit(cm.queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(cm.queue);
+  }
 
   std::vector<float> outputData =
       retrieveOutput(cm.device, buffers.stagingBuffer3.memory, bufferSize);
 
   // Verify that each element in the output matrix is 3.0f
-  bool isCorrect = verifyOutput(outputData, 3.0F);
-  if (isCorrect) {
-    std::cout << "The output is correct!\n";
-  } else {
-    std::cout << "The output is incorrect.\n";
+  {
+    bool isCorrect = verifyOutput(outputData, 3.0F);
+    if (isCorrect) {
+      std::cout << "The output is correct!\n";
+    } else {
+      std::cout << "The output is incorrect.\n";
+    }
   }
 
   // Cleanup
@@ -368,6 +432,24 @@ int main() {
                                nullptr);
   vkFreeDescriptorSets(cm.device, cm.descriptorPool, 1,
                        &resources.descriptorSet);
+
+  std::vector<float> outputCPU(WIDTH * HEIGHT);
+  {
+    uspam::TimeIt<true> timeit("CPU version");
+    for (int i = 0; i < WIDTH * HEIGHT; ++i) {
+      outputCPU[i] = input1[i] + input2[i];
+    }
+  }
+
+  // Verify results
+  {
+    bool isCorrect = verifyOutput(outputCPU, 3.0F);
+    if (isCorrect) {
+      std::cout << "The output is correct!\n";
+    } else {
+      std::cout << "The output is incorrect.\n";
+    }
+  }
 
   return 0;
 }

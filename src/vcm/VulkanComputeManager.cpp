@@ -152,7 +152,7 @@ void VulkanComputeManager::createBuffer(VkDeviceSize size,
                                         VkBufferUsageFlags usage,
                                         VkMemoryPropertyFlags properties,
                                         VkBuffer &buffer,
-                                        VkDeviceMemory &bufferMemory) {
+                                        VkDeviceMemory &bufferMemory) const {
   VkBufferCreateInfo bufferInfo{};
   bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   bufferInfo.size = size;
@@ -180,6 +180,102 @@ void VulkanComputeManager::createBuffer(VkDeviceSize size,
   }
 
   vkBindBufferMemory(device, buffer, bufferMemory, 0);
+}
+
+void VulkanComputeManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
+                                      VkDeviceSize size,
+                                      VkCommandBuffer commandBuffer) const {
+  // Memory transfer ops are executed using command buffers.
+  // We must first allocate a temporary command buffer.
+  // We can create a short-lived command pool for this because the
+  // implementation may be able to apply memory allocation optimizations.
+  // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
+  // pool creation
+
+  const bool allocTempCommandBuffer = commandBuffer == VK_NULL_HANDLE;
+
+  if (allocTempCommandBuffer) {
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+    // Immediately start recording the command buffer
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+  }
+
+  VkBufferCopy copyRegion{};
+  copyRegion.srcOffset = 0; // Optional
+  copyRegion.dstOffset = 0; // Optional
+  copyRegion.size = size;
+  vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+  if (allocTempCommandBuffer) {
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+
+    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+  }
+}
+
+void VulkanComputeManager::copyBuffers(
+    std::span<CopyBufferT> buffersToCopy) const {
+  // Memory transfer ops are executed using command buffers.
+  // We must first allocate a temporary command buffer.
+  // We can create a short-lived command pool for this because the
+  // implementation may be able to apply memory allocation optimizations.
+  // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
+  // pool creation
+
+  VkCommandBufferAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandPool = commandPool;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandBufferCount = 1;
+
+  VkCommandBuffer commandBuffer; // NOLINT
+  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+  // Immediately start recording the command buffer
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+  for (const auto &buffers : buffersToCopy) {
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size = buffers.size;
+    vkCmdCopyBuffer(commandBuffer, buffers.src, buffers.dst, 1, &copyRegion);
+  }
+
+  vkEndCommandBuffer(commandBuffer);
+
+  VkSubmitInfo submitInfo{};
+  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &commandBuffer;
+  vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueWaitIdle(queue);
+
+  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 uint32_t
@@ -480,4 +576,25 @@ void VulkanComputeManager::cleanup() {
   vkDestroyInstance(instance, nullptr);
 }
 
+auto VulkanComputeManager::queryInstanceExtensionSupport()
+    -> std::vector<VkExtensionProperties> {
+  // check for extension support
+
+  uint32_t extensionCount = 0;
+  vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+
+  std::vector<VkExtensionProperties> extensions(extensionCount);
+  vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
+                                         extensions.data());
+  return extensions;
+}
+
+void VulkanComputeManager::printInstanceExtensionSupport() {
+  const auto extensions = queryInstanceExtensionSupport();
+
+  fmt::print("Available Vulkan extensions:\n");
+  for (const auto &extension : extensions) {
+    fmt::print("\t{}\n", extension.extensionName);
+  }
+}
 } // namespace vcm
