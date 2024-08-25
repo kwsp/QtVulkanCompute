@@ -1,5 +1,4 @@
-#include "timeit.hpp"
-#include "vcm/VulkanComputeManager.hpp"
+#include "vcm/vcm.hpp"
 #include "vulkan/vulkan_enums.hpp"
 #include "vulkan/vulkan_structs.hpp"
 #include <cstddef>
@@ -156,7 +155,7 @@ void recordCommandBuffer(vcm::VulkanComputeManager &cm,
                          ComputeShaderResources &resources,
                          ComputeShaderBuffers &buffers,
                          vk::DeviceSize bufferSize, int width, int height) {
-  uspam::TimeIt<true> timeit("Recording command buffer");
+  vcm::TimeIt<true> timeit("Recording command buffer");
 
   // Record the command buffer
   {
@@ -335,7 +334,7 @@ int main() {
 
   // Submit the command buffer to the compute queue
   {
-    uspam::TimeIt<true> timeit("Wait queue");
+    vcm::TimeIt<true> timeit("Wait queue");
 
     vk::SubmitInfo submitInfo{};
     submitInfo.commandBufferCount = 1;
@@ -360,7 +359,7 @@ int main() {
 
   std::vector<float> outputCPU(WIDTH * HEIGHT);
   {
-    uspam::TimeIt<true> timeit("CPU version");
+    vcm::TimeIt<true> timeit("CPU version");
     for (int i = 0; i < WIDTH * HEIGHT; ++i) {
       outputCPU[i] = input1[i] + input2[i];
     }

@@ -1,4 +1,5 @@
 #include "VulkanComputeManager.hpp"
+#include "Common.hpp"
 #include <armadillo>
 #include <array>
 #include <fmt/format.h>
@@ -391,8 +392,15 @@ void VulkanComputeManager::createLogicalDevice() {
   const auto indices = findQueueFamilies(physicalDevice);
 
   vk::DeviceQueueCreateInfo queueCreateInfo{};
-  queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
-  queueCreateInfo.queueCount = 1;
+  if (indices.computeFamily.has_value()) {
+    queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
+    queueCreateInfo.queueCount = 1;
+  } else {
+    const auto msg =
+        fmt::format("Compute queue not supported on physical device {}",
+                    physicalDeviceName);
+    throw std::runtime_error(msg);
+  }
 
   float queuePriority = 1.0F;
   queueCreateInfo.pQueuePriorities = &queuePriority;

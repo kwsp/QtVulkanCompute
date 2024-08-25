@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common.hpp"
 #include <filesystem>
 #include <fmt/format.h>
 #include <optional>
@@ -10,27 +11,6 @@
 #include <vulkan/vulkan.hpp>
 
 namespace vcm {
-
-namespace fs = std::filesystem;
-
-struct VulkanBufferRef {
-  vk::Buffer buffer;
-  vk::DeviceMemory memory;
-};
-
-struct VulkanBuffer {
-  vk::UniqueBuffer buffer;
-  vk::UniqueDeviceMemory memory;
-
-  [[nodiscard]] VulkanBufferRef ref() const {
-    return {buffer.get(), memory.get()};
-  }
-};
-
-struct VulkanImage {
-  vk::UniqueImage image;
-  vk::UniqueDeviceMemory memory;
-};
 
 class VulkanComputeManager {
 public:
@@ -236,12 +216,44 @@ public:
   findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
   /* Load shaders */
-  vk::UniqueShaderModule loadShader(const fs::path &filename) const;
+  [[nodiscard]] vk::UniqueShaderModule
+  loadShader(const fs::path &filename) const;
   [[nodiscard]] vk::UniqueShaderModule
   createShaderModule(const std::vector<char> &computeShaderCode) const;
 
   /* Cleanup */
   void cleanup();
 };
+
+// Insert a memory barrier to wait for transfer to complete before starting
+// compute shader
+inline void memoryBarrierTransferThenCompute(vk::CommandBuffer &commandBuffer) {
+  vk::MemoryBarrier memoryBarrier{};
+  memoryBarrier.srcAccessMask =
+      vk::AccessFlagBits::eTransferWrite; // After copying
+  memoryBarrier.dstAccessMask =
+      vk::AccessFlagBits::eShaderRead; // Before compute shader reads
+
+  commandBuffer.pipelineBarrier(
+      vk::PipelineStageFlagBits::eTransfer,      // src: after the transfer op
+      vk::PipelineStageFlagBits::eComputeShader, // dst: before the compute
+                                                 // shader
+      {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+}
+
+// Insert a memory barrier to wait for compute shader to complete before
+// transfering memory
+inline void memoryBarrierComputeThenTransfer(vk::CommandBuffer &commandBuffer) {
+  vk::MemoryBarrier memoryBarrier{};
+  memoryBarrier.srcAccessMask =
+      vk::AccessFlagBits::eShaderWrite; // After compute shader writes
+  memoryBarrier.dstAccessMask =
+      vk::AccessFlagBits::eTransferRead; // Before transfer reads
+
+  commandBuffer.pipelineBarrier(
+      vk::PipelineStageFlagBits::eComputeShader, // src: after compute
+      vk::PipelineStageFlagBits::eTransfer,      // dst: before next transfer
+      {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+}
 
 } // namespace vcm

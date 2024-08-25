@@ -42,6 +42,7 @@ add_executable(add
   mainAdd.cpp
   vcm/VulkanComputeManager.hpp
   vcm/VulkanComputeManager.cpp
+  vcm/ComputeShaderExecutor.hpp
 )
 target_link_libraries(add PRIVATE
   fmt::fmt
