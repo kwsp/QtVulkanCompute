@@ -50,7 +50,6 @@ foreach(SHADER ${SHADERS})
 
         # Create a target for copying the SPIR-V file
         add_custom_target(${FILE_NAME}_${CONFIG}_shader DEPENDS ${CONFIG_SPIRV})
-
         add_dependencies(compile_shaders ${FILE_NAME}_${CONFIG}_shader)
     endforeach()
 

@@ -242,40 +242,6 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   return true;
 }
 
-std::vector<float> retrieveOutput(VkDevice device, VkDeviceMemory outputMemory,
-                                  VkDeviceSize size) {
-  void *mappedMemory{};
-  if (vkMapMemory(device, outputMemory, 0, size, 0, &mappedMemory) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to map output memory");
-  }
-
-  // Copy the data from GPU memory to a local vector
-  std::vector<float> outputData(size / sizeof(float));
-  memcpy(outputData.data(), mappedMemory, static_cast<size_t>(size));
-
-  // Unmap the memory after retrieving the data
-  vkUnmapMemory(device, outputMemory);
-
-  return outputData;
-}
-
-// Function to transfer data from a std::vector to a Vulkan staging buffer
-template <typename T>
-void transferDataToStagingBuffer(vk::Device &device,
-                                 vcm::VulkanBuffer &stagingBuffer,
-                                 std::span<const T> data) {
-  // Step 1: Map the memory associated with the staging buffer
-  void *mappedMemory =
-      device.mapMemory(stagingBuffer.memory.get(), 0, data.size() * sizeof(T));
-
-  // Step 2: Copy data from the vector to the mapped memory
-  memcpy(mappedMemory, data.data(), data.size() * sizeof(T));
-
-  // Step 3: Unmap the memory so the GPU can access it
-  device.unmapMemory(stagingBuffer.memory.get());
-}
-
 int main() {
   const uint32_t WIDTH = 512;
   const uint32_t HEIGHT = 512;
@@ -357,10 +323,9 @@ int main() {
   // Copy data to staging buffers
   std::vector<float> input1(WIDTH * HEIGHT, 1);
   std::vector<float> input2(WIDTH * HEIGHT, 2);
-  transferDataToStagingBuffer<float>(*cm.device, buffers.stagingBuffer1,
-                                     input1);
-  transferDataToStagingBuffer<float>(*cm.device, buffers.stagingBuffer2,
-                                     input2);
+
+  cm.copyToStagingBuffer<float>(input1, buffers.stagingBuffer1);
+  cm.copyToStagingBuffer<float>(input2, buffers.stagingBuffer2);
 
   auto &commandBuffer = cm.commandBuffer;
   recordCommandBuffer(cm, cm.commandBuffer, resources, buffers, bufferSize,
@@ -378,8 +343,8 @@ int main() {
     cm.queue.waitIdle();
   }
 
-  std::vector<float> outputData = retrieveOutput(
-      cm.device.get(), buffers.stagingBuffer3.memory.get(), bufferSize);
+  std::vector<float> outputData(WIDTH * HEIGHT);
+  cm.copyFromStagingBuffer<float>(buffers.stagingBuffer3, outputData);
 
   // Verify that each element in the output matrix is 3.0f
   {

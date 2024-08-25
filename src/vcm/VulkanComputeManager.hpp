@@ -177,6 +177,42 @@ public:
     }
   }
 
+  // Transfer data from a user host buffer to a Vulkan staging buffer
+  template <typename T>
+  void copyToStagingBuffer(std::span<const T> data,
+                           vk::DeviceMemory memory) const {
+    // Step 1: Map the memory associated with the staging buffer
+    void *mappedMemory = device->mapMemory(memory, 0, data.size() * sizeof(T));
+
+    // Step 2: Copy data from the vector to the mapped memory
+    memcpy(mappedMemory, data.data(), data.size() * sizeof(T));
+
+    // Step 3: Unmap the memory so the GPU can access it
+    device->unmapMemory(memory);
+  }
+  template <typename T>
+  void copyToStagingBuffer(std::span<const T> data,
+                           VulkanBuffer &stagingBuffer) const {
+    copyToStagingBuffer(data, stagingBuffer.memory.get());
+  }
+
+  template <typename T>
+  void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
+    vk::DeviceSize size = data.size() * sizeof(T);
+    void *mappedMemory = device->mapMemory(memory, 0, size);
+
+    // Copy the data from GPU memory to a local vector
+    memcpy(data.data(), mappedMemory, static_cast<size_t>(size));
+
+    // Unmap the memory after retrieving the data
+    device->unmapMemory(memory);
+  }
+  template <typename T>
+  void copyFromStagingBuffer(const VulkanBuffer &stagingBuffer,
+                             std::span<T> data) const {
+    copyFromStagingBuffer<T>(stagingBuffer.memory.get(), data);
+  }
+
   // private:
   // QVulkanInstance vulkanInstance;
   vk::UniqueInstance instance;

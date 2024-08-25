@@ -53,3 +53,20 @@ set_target_properties(add PROPERTIES
     CXX_STANDARD 20
     CXX_EXTENSIONS OFF
 )
+
+set(NAME addImage2D)
+add_executable(${NAME}
+  mainAddImage2d.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
+)
+target_link_libraries(${NAME} PRIVATE
+  fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+)
+add_dependencies(${NAME} compile_shaders)
+set_target_properties(${NAME} PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
+)
