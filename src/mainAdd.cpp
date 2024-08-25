@@ -44,44 +44,6 @@ struct PushConstantData {
   int height;
 };
 
-void createComputePipeline(vcm::VulkanComputeManager &cm,
-                           ComputeShaderResources &resources) {
-  // Load the SPIR-V binary
-  vk::UniqueShaderModule shaderModule = cm.loadShader("shaders/add2D.spv");
-
-  vk::PushConstantRange pushConstantRange{};
-  pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
-  pushConstantRange.offset = 0;
-  pushConstantRange.size = sizeof(PushConstantData);
-
-  vk::PipelineShaderStageCreateInfo shaderStageCreateInfo{};
-  shaderStageCreateInfo.stage = vk::ShaderStageFlagBits::eCompute;
-  shaderStageCreateInfo.module = *shaderModule;
-  shaderStageCreateInfo.pName = "main";
-
-  vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
-  pipelineLayoutCreateInfo.setLayoutCount = 1;
-  pipelineLayoutCreateInfo.pSetLayouts = &resources.descriptorSetLayout.get();
-  pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-  pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-
-  resources.pipelineLayout =
-      cm.device->createPipelineLayoutUnique(pipelineLayoutCreateInfo);
-
-  vk::ComputePipelineCreateInfo pipelineCreateInfo{};
-  pipelineCreateInfo.stage = shaderStageCreateInfo;
-  pipelineCreateInfo.layout = *resources.pipelineLayout;
-
-  auto pipelineResult =
-      cm.device->createComputePipelineUnique(nullptr, pipelineCreateInfo);
-
-  if (pipelineResult.result != vk::Result::eSuccess) {
-    throw std::runtime_error("Failed to create compute pipeline!");
-  }
-
-  resources.pipeline = std::move(pipelineResult.value);
-}
-
 // Bind command buffer to pipeline
 // Bind command buffer to descriptor set
 // Dispatch command buffer
@@ -115,18 +77,21 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   return true;
 }
 
+namespace fs = std::filesystem;
 template <int NInputBuf> class ShaderExecutor {
 public:
-  ShaderExecutor(vcm::VulkanComputeManager &cm,
-                 const ComputeShaderBuffers<NInputBuf> &buffers) {
+  ShaderExecutor(fs::path shaderFile, vcm::VulkanComputeManager &cm,
+                 const ComputeShaderBuffers<NInputBuf> &buffers)
+      : shaderFilename(std::move(shaderFile)) {
 
     createDescriptorSet(cm);
     createDescriptorPoolAndSet(cm, buffers);
-    createComputePipeline(cm, resources);
+    createComputePipeline(cm);
   }
 
   // private:
   ComputeShaderResources resources{};
+  fs::path shaderFilename;
 
   void recordCommandBuffer(vcm::VulkanComputeManager &cm,
                            vk::CommandBuffer commandBuffer,
@@ -268,6 +233,43 @@ private:
       cm.device->updateDescriptorSets(descriptorWrites, {});
     }
   }
+
+  void createComputePipeline(vcm::VulkanComputeManager &cm) {
+    // Load the SPIR-V binary
+    vk::UniqueShaderModule shaderModule = cm.loadShader(shaderFilename);
+
+    vk::PushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(PushConstantData);
+
+    vk::PipelineShaderStageCreateInfo shaderStageCreateInfo{};
+    shaderStageCreateInfo.stage = vk::ShaderStageFlagBits::eCompute;
+    shaderStageCreateInfo.module = *shaderModule;
+    shaderStageCreateInfo.pName = "main";
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+    pipelineLayoutCreateInfo.setLayoutCount = 1;
+    pipelineLayoutCreateInfo.pSetLayouts = &resources.descriptorSetLayout.get();
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+
+    resources.pipelineLayout =
+        cm.device->createPipelineLayoutUnique(pipelineLayoutCreateInfo);
+
+    vk::ComputePipelineCreateInfo pipelineCreateInfo{};
+    pipelineCreateInfo.stage = shaderStageCreateInfo;
+    pipelineCreateInfo.layout = *resources.pipelineLayout;
+
+    auto pipelineResult =
+        cm.device->createComputePipelineUnique(nullptr, pipelineCreateInfo);
+
+    if (pipelineResult.result != vk::Result::eSuccess) {
+      throw std::runtime_error("Failed to create compute pipeline!");
+    }
+
+    resources.pipeline = std::move(pipelineResult.value);
+  }
 };
 
 int main() {
@@ -305,7 +307,7 @@ int main() {
   cm.copyToStagingBuffer<float>(input2, buffers.in[1].staging);
 
   /* Create shader */
-  ShaderExecutor<2> shader(cm, buffers);
+  ShaderExecutor<2> shader("shaders/add2D.spv", cm, buffers);
 
   auto &commandBuffer = cm.commandBuffer;
 
