@@ -9,6 +9,7 @@ find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 set(SHADERS
     warpPolarCompute.comp.glsl
     add2D.comp.glsl
+    addImage2D.comp.glsl
 )
 
 # Compile the shaders once

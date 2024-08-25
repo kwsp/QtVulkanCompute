@@ -22,15 +22,16 @@ struct ComputeShaderResources {
 
 // Shader specific buffer
 struct ComputeShaderBuffers {
+  vcm::VulkanImage image1;
+  vcm::VulkanImage image2;
+  vcm::VulkanImage image3;
+
   // Question: uniform buffer vs push constant
   vcm::VulkanBuffer stagingBuffer1;
   vcm::VulkanBuffer stagingBuffer2;
   vcm::VulkanBuffer stagingBuffer3;
-
-  vcm::VulkanBuffer buffer1;
-  vcm::VulkanBuffer buffer2;
-  vcm::VulkanBuffer buffer3;
 };
+
 struct PushConstantData {
   int width;
   int height;
@@ -39,7 +40,7 @@ struct PushConstantData {
 void createComputePipeline(vcm::VulkanComputeManager &cm,
                            ComputeShaderResources &resources) {
   // Load the SPIR-V binary
-  vk::UniqueShaderModule shaderModule = cm.loadShader("shaders/add2D.spv");
+  vk::UniqueShaderModule shaderModule = cm.loadShader("shaders/addImage2D.spv");
 
   vk::PushConstantRange pushConstantRange{};
   pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
@@ -91,43 +92,38 @@ void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
 
   // Bind device buffers to the descriptor set
   {
-    vk::DescriptorBufferInfo bufferInfo1{};
-    bufferInfo1.buffer = buffers.buffer1.buffer.get();
-    bufferInfo1.offset = 0;
-    bufferInfo1.range = VK_WHOLE_SIZE;
+    const auto makeImageView = [&](vk::Image image) {
+      vk::ImageViewCreateInfo viewInfo{};
+      viewInfo.image = image;
+      viewInfo.viewType = vk::ImageViewType::e2D;
+      viewInfo.format = vk::Format::eR32Sfloat; // Assuming a single-channel
+                                                // 32-bit float format
+      viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+      viewInfo.subresourceRange.baseMipLevel = 0;
+      viewInfo.subresourceRange.levelCount = 1;
+      viewInfo.subresourceRange.baseArrayLayer = 0;
+      viewInfo.subresourceRange.layerCount = 1;
+      return cm.device->createImageView(viewInfo);
+    };
 
-    vk::DescriptorBufferInfo bufferInfo2{};
-    bufferInfo2.buffer = buffers.buffer2.buffer.get();
-    bufferInfo2.offset = 0;
-    bufferInfo2.range = VK_WHOLE_SIZE;
+    const auto makeWriteDescriptorSet = [&](vk::Image image, uint32_t binding) {
+      vk::DescriptorImageInfo imageInfo{};
+      imageInfo.imageView = makeImageView(buffers.image1.image.get());
 
-    vk::DescriptorBufferInfo outputBufferInfo{};
-    outputBufferInfo.buffer = buffers.buffer3.buffer.get();
-    outputBufferInfo.offset = 0;
-    outputBufferInfo.range = VK_WHOLE_SIZE;
+      vk::WriteDescriptorSet descriptorWrite{};
+      descriptorWrite.dstSet = resources.descriptorSet.get();
+      descriptorWrite.dstBinding = binding;
+      descriptorWrite.dstArrayElement = 0;
+      descriptorWrite.descriptorType = vk::DescriptorType::eStorageImage;
+      descriptorWrite.pImageInfo = &imageInfo;
+      return descriptorWrite;
+    };
 
-    std::array<vk::WriteDescriptorSet, 3> descriptorWrites{};
-
-    descriptorWrites[0].dstSet = resources.descriptorSet.get();
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo1;
-
-    descriptorWrites[1].dstSet = resources.descriptorSet.get();
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pBufferInfo = &bufferInfo2;
-
-    descriptorWrites[2].dstSet = resources.descriptorSet.get();
-    descriptorWrites[2].dstBinding = 2;
-    descriptorWrites[2].dstArrayElement = 0;
-    descriptorWrites[2].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[2].descriptorCount = 1;
-    descriptorWrites[2].pBufferInfo = &outputBufferInfo;
+    std::array<vk::WriteDescriptorSet, 3> descriptorWrites{{
+        makeWriteDescriptorSet(buffers.image1.image.get(), 1),
+        makeWriteDescriptorSet(buffers.image2.image.get(), 2),
+        makeWriteDescriptorSet(buffers.image3.image.get(), 3),
+    }};
 
     cm.device->updateDescriptorSets(descriptorWrites, {});
   }
@@ -188,11 +184,15 @@ void recordCommandBuffer(vcm::VulkanComputeManager &cm,
   // }
 
   {
+
     // Async copy with barrier
-    cm.copyBuffer(buffers.stagingBuffer1.buffer.get(),
-                  buffers.buffer1.buffer.get(), bufferSize, commandBuffer);
-    cm.copyBuffer(buffers.stagingBuffer2.buffer.get(),
-                  buffers.buffer2.buffer.get(), bufferSize, commandBuffer);
+    cm.copyBufferToImage(buffers.stagingBuffer1.buffer.get(),
+                         buffers.image1.image.get(), width, height,
+                         commandBuffer);
+
+    cm.copyBufferToImage(buffers.stagingBuffer2.buffer.get(),
+                         buffers.image2.image.get(), width, height,
+                         commandBuffer);
 
     vk::MemoryBarrier memoryBarrier{};
     memoryBarrier.srcAccessMask =
@@ -223,9 +223,9 @@ void recordCommandBuffer(vcm::VulkanComputeManager &cm,
         {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
     // Copy result back to staging
-    cm.copyBuffer(buffers.buffer3.buffer.get(),
-                  buffers.stagingBuffer3.buffer.get(), bufferSize,
-                  commandBuffer);
+    cm.copyImageToBuffer(buffers.image3.image.get(),
+                         buffers.stagingBuffer3.buffer.get(), width, height,
+                         commandBuffer);
   }
 
   commandBuffer.end();
@@ -277,8 +277,8 @@ void transferDataToStagingBuffer(vk::Device &device,
 }
 
 int main() {
-  const uint32_t WIDTH = 512;
-  const uint32_t HEIGHT = 512;
+  const uint32_t WIDTH = 512 * 2;
+  const uint32_t HEIGHT = 512 * 2;
 
   vcm::VulkanComputeManager cm;
   ComputeShaderResources resources{};
@@ -299,18 +299,21 @@ int main() {
 
     buffers.stagingBuffer1 =
         cm.createBuffer(bufferSize, eTransferSrc, eHostVisible | eHostCoherent);
-    buffers.buffer1 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferDst,
-                                      eDeviceLocal);
+    buffers.image1 = cm.createImage2D(WIDTH, HEIGHT, vk::Format::eR32Sfloat,
+                                      vk::ImageUsageFlagBits::eTransferDst |
+                                          vk::ImageUsageFlagBits::eStorage);
 
     buffers.stagingBuffer2 =
         cm.createBuffer(bufferSize, eTransferSrc, eHostVisible | eHostCoherent);
-    buffers.buffer2 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferDst,
-                                      eDeviceLocal);
+    buffers.image2 = cm.createImage2D(WIDTH, HEIGHT, vk::Format::eR32Sfloat,
+                                      vk::ImageUsageFlagBits::eTransferDst |
+                                          vk::ImageUsageFlagBits::eStorage);
 
     buffers.stagingBuffer3 =
         cm.createBuffer(bufferSize, eTransferDst, eHostVisible | eHostCoherent);
-    buffers.buffer3 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferSrc,
-                                      eDeviceLocal);
+    buffers.image2 = cm.createImage2D(WIDTH, HEIGHT, vk::Format::eR32Sfloat,
+                                      vk::ImageUsageFlagBits::eTransferSrc |
+                                          vk::ImageUsageFlagBits::eStorage);
   }
 
   // descriptorset layout bindings
@@ -321,7 +324,6 @@ int main() {
     descriptorSetLayoutBindings[0].descriptorType =
         vk::DescriptorType::eStorageBuffer;
     descriptorSetLayoutBindings[0].descriptorCount = 1;
-
     descriptorSetLayoutBindings[0].stageFlags =
         vk::ShaderStageFlagBits::eCompute;
 
@@ -362,6 +364,7 @@ int main() {
   transferDataToStagingBuffer<float>(*cm.device, buffers.stagingBuffer2,
                                      input2);
 
+  // TODO
   auto &commandBuffer = cm.commandBuffer;
   recordCommandBuffer(cm, cm.commandBuffer, resources, buffers, bufferSize,
                       WIDTH, HEIGHT);

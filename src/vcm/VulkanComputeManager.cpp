@@ -1,6 +1,4 @@
 #include "VulkanComputeManager.hpp"
-#include "vulkan/vulkan_enums.hpp"
-#include "vulkan/vulkan_structs.hpp"
 #include <armadillo>
 #include <array>
 #include <fmt/format.h>
@@ -32,7 +30,16 @@ VulkanComputeManager::VulkanComputeManager() {
 
   createDescriptorPool();
 
-  // loadComputeShader("shaders/warpPolarCompute.spv");
+  {
+    auto formatProperties =
+        physicalDevice.getFormatProperties(vk::Format::eR32Sfloat);
+    bool supportedAsStorageImage = (formatProperties.optimalTilingFeatures &
+                                    vk::FormatFeatureFlagBits::eStorageImage) !=
+                                   static_cast<vk::FormatFeatureFlagBits>(0);
+    fmt::println("-- Checking format eR32Sfloat");
+    fmt::println("  -- Supported as storage image: {}",
+                 supportedAsStorageImage);
+  }
 }
 
 void VulkanComputeManager::createCommandPool() {
@@ -40,7 +47,12 @@ void VulkanComputeManager::createCommandPool() {
 
   vk::CommandPoolCreateInfo poolInfo{};
   poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-  poolInfo.queueFamilyIndex = queueFamilyIndices.computeFamily.value();
+
+  if (queueFamilyIndices.computeFamily.has_value()) {
+    poolInfo.queueFamilyIndex = queueFamilyIndices.computeFamily.value();
+  } else {
+    throw std::runtime_error("No compute queue available");
+  }
 
   // There are 2 possible flags for command pools
   // - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: hint that command buffers are
@@ -72,19 +84,6 @@ void VulkanComputeManager::createCommandBuffer() {
   commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
 }
 
-void VulkanComputeManager::recordCommandBuffer(vk::CommandBuffer commandBuffer,
-                                               uint32_t imageIndex) {
-  vk::CommandBufferBeginInfo beginInfo{};
-  // VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: rerecorded right after
-  // executing it once. VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT:
-  // secondary command buffer that will be entirely within a single render pass
-  // VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: can be resubmitted while it
-  // is also already pending execution.
-  // Non are applicable right now.
-  beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-  commandBuffer.begin(beginInfo);
-}
-
 void VulkanComputeManager::createDescriptorPool() {
   // Create descriptor pool
   // describe which descriptor types our descriptor sets are going to contain
@@ -103,16 +102,17 @@ void VulkanComputeManager::createDescriptorPool() {
   descriptorPool = device->createDescriptorPool(poolInfo);
 }
 
-void VulkanComputeManager::createBuffer(
-    vk::DeviceSize size, vk::BufferUsageFlags usage,
-    vk::MemoryPropertyFlags properties, vk::UniqueBuffer &buffer,
-    vk::UniqueDeviceMemory &bufferMemory) const {
+VulkanBuffer
+VulkanComputeManager::createBuffer(vk::DeviceSize size,
+                                   vk::BufferUsageFlags usage,
+                                   vk::MemoryPropertyFlags properties) const {
+
   vk::BufferCreateInfo bufferInfo{};
   bufferInfo.size = size;
   bufferInfo.usage = usage;
   bufferInfo.sharingMode = vk::SharingMode::eExclusive;
 
-  buffer = device->createBufferUnique(bufferInfo);
+  auto buffer = device->createBufferUnique(bufferInfo);
 
   // To allocate memory for a buffer we need to first query its memory
   // requirements using vkGetBufferMemoryRequirements
@@ -124,9 +124,43 @@ void VulkanComputeManager::createBuffer(
   allocInfo.memoryTypeIndex =
       findMemoryType(memRequirements.memoryTypeBits, properties);
 
-  bufferMemory = device->allocateMemoryUnique(allocInfo);
+  auto bufferMemory = device->allocateMemoryUnique(allocInfo);
 
   device->bindBufferMemory(*buffer, *bufferMemory, 0);
+  return {std::move(buffer), std::move(bufferMemory)};
+}
+
+VulkanImage
+VulkanComputeManager::createImage2D(uint32_t width, uint32_t height,
+                                    vk::Format format,
+                                    vk::ImageUsageFlags usage) const {
+  vk::ImageCreateInfo imageInfo{};
+  imageInfo.imageType = vk::ImageType::e2D;
+  imageInfo.extent.width = width;
+  imageInfo.extent.height = height;
+  imageInfo.extent.depth = 1;
+  imageInfo.mipLevels = 1;
+  imageInfo.arrayLayers = 1;
+  imageInfo.format = format;
+  imageInfo.tiling = vk::ImageTiling::eOptimal;
+  imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+  imageInfo.usage = usage;
+  imageInfo.sharingMode = vk::SharingMode::eExclusive;
+  imageInfo.samples = vk::SampleCountFlagBits::e1;
+  auto image = device->createImageUnique(imageInfo);
+
+  // Allocate and bind memory for the image
+  vk::MemoryRequirements imageMemRequirements =
+      device->getImageMemoryRequirements(image.get());
+  vk::MemoryAllocateInfo imageAllocInfo{};
+  imageAllocInfo.allocationSize = imageMemRequirements.size;
+  imageAllocInfo.memoryTypeIndex =
+      findMemoryType(imageMemRequirements.memoryTypeBits,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+  auto imageMemory = device->allocateMemoryUnique(imageAllocInfo);
+  device->bindImageMemory(image.get(), imageMemory.get(), 0);
+  return {std::move(image), std::move(imageMemory)};
 }
 
 void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
@@ -142,18 +176,7 @@ void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
   const bool allocTempCommandBuffer = !commandBuffer;
 
   if (allocTempCommandBuffer) {
-    vk::CommandBufferAllocateInfo allocInfo{};
-    allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandPool = *commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
-
-    // Immediately start recording the command buffer
-    vk::CommandBufferBeginInfo beginInfo{};
-    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-
-    commandBuffer.begin(beginInfo);
+    commandBuffer = beginTempOneTimeCommandBuffer();
   }
 
   vk::BufferCopy copyRegion{};
@@ -161,13 +184,7 @@ void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
   commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
 
   if (allocTempCommandBuffer) {
-    commandBuffer.end();
-
-    vk::SubmitInfo submitInfo{};
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-    queue.submit(submitInfo);
-    queue.waitIdle();
+    endOneTimeCommandBuffer(commandBuffer);
   }
 }
 
