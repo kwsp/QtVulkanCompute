@@ -227,41 +227,14 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
 
 template <int NInputBuf> class ShaderExecutor {
 public:
-  ShaderExecutor() {}
+  ShaderExecutor(vcm::VulkanComputeManager &cm) { createDescriptorSet(cm); }
 
   // private:
   ComputeShaderResources resources{};
-};
 
-int main() {
-  const uint32_t WIDTH = 512;
-  const uint32_t HEIGHT = 512;
-
-  vcm::VulkanComputeManager cm;
-
-  ShaderExecutor<2> shader;
-
-  /*
-  Create buffers
-  */
-  vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
-  ComputeShaderBuffers<2> buffers{};
-
-  vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(bufferSize);
-  vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(bufferSize);
-
-  vcm::VulkanBuffer inputBuf2Staging = cm.createStagingBufferSrc(bufferSize);
-  vcm::VulkanBuffer inputBuf2 = cm.createDeviceBufferDst(bufferSize);
-
-  auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
-  auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
-
-  buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
-                 {inputBuf2.ref(), inputBuf2Staging.ref()}}};
-  buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
-
-  // descriptorset layout bindings
-  {
+private:
+  void createDescriptorSet(vcm::VulkanComputeManager &cm) {
+    // descriptorset layout bindings
     const auto makeComputeDescriptorSetLayoutBinding = [](int binding) {
       vk::DescriptorSetLayoutBinding descriptorSetLayoutBinding;
       descriptorSetLayoutBinding.binding = binding;
@@ -283,9 +256,37 @@ int main() {
     createInfo.bindingCount = descriptorSetLayoutBindings.size();
     createInfo.pBindings = descriptorSetLayoutBindings.data();
 
-    shader.resources.descriptorSetLayout =
+    resources.descriptorSetLayout =
         cm.device->createDescriptorSetLayoutUnique(createInfo);
   }
+};
+
+int main() {
+  const uint32_t WIDTH = 512;
+  const uint32_t HEIGHT = 512;
+
+  vcm::VulkanComputeManager cm;
+
+  ShaderExecutor<2> shader(cm);
+
+  /*
+  Create buffers
+  */
+  vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
+  ComputeShaderBuffers<2> buffers{};
+
+  vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(bufferSize);
+  vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(bufferSize);
+
+  vcm::VulkanBuffer inputBuf2Staging = cm.createStagingBufferSrc(bufferSize);
+  vcm::VulkanBuffer inputBuf2 = cm.createDeviceBufferDst(bufferSize);
+
+  auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
+  auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
+
+  buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
+                 {inputBuf2.ref(), inputBuf2Staging.ref()}}};
+  buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
 
   createDescriptorPoolAndSet(cm, shader.resources, buffers);
 
