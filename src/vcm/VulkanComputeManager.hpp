@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <fmt/format.h>
 #include <optional>
 #include <span>
@@ -9,6 +10,8 @@
 #include <vulkan/vulkan.hpp>
 
 namespace vcm {
+
+namespace fs = std::filesystem;
 
 struct VulkanBuffer {
   vk::UniqueBuffer buffer;
@@ -214,7 +217,7 @@ public:
   findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
   /* Load shaders */
-  vk::UniqueShaderModule loadShader(const char *filename) const;
+  vk::UniqueShaderModule loadShader(const fs::path &filename) const;
   [[nodiscard]] vk::UniqueShaderModule
   createShaderModule(const std::vector<char> &computeShaderCode) const;
 

@@ -242,12 +242,22 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   return true;
 }
 
+template <int NInputBuf> class ShaderExecutor {
+public:
+  ShaderExecutor() {}
+
+  // private:
+  ComputeShaderResources resources{};
+};
+
 int main() {
   const uint32_t WIDTH = 512;
   const uint32_t HEIGHT = 512;
 
   vcm::VulkanComputeManager cm;
-  ComputeShaderResources resources{};
+
+  ShaderExecutor<2> shader;
+
   ComputeShaderBuffers buffers{};
 
   /*
@@ -289,13 +299,13 @@ int main() {
     createInfo.bindingCount = descriptorSetLayoutBindings.size();
     createInfo.pBindings = descriptorSetLayoutBindings.data();
 
-    resources.descriptorSetLayout =
+    shader.resources.descriptorSetLayout =
         cm.device->createDescriptorSetLayoutUnique(createInfo);
   }
 
-  createDescriptorPoolAndSet(cm, resources, buffers);
+  createDescriptorPoolAndSet(cm, shader.resources, buffers);
 
-  createComputePipeline(cm, resources);
+  createComputePipeline(cm, shader.resources);
 
   // Copy data to staging buffers
   std::vector<float> input1(WIDTH * HEIGHT, 1);
@@ -305,8 +315,8 @@ int main() {
   cm.copyToStagingBuffer<float>(input2, buffers.stagingBuffer2);
 
   auto &commandBuffer = cm.commandBuffer;
-  recordCommandBuffer(cm, cm.commandBuffer, resources, buffers, bufferSize,
-                      WIDTH, HEIGHT);
+  recordCommandBuffer(cm, cm.commandBuffer, shader.resources, buffers,
+                      bufferSize, WIDTH, HEIGHT);
 
   // Submit the command buffer to the compute queue
   {
