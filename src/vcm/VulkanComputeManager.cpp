@@ -355,7 +355,8 @@ void VulkanComputeManager::pickPhysicalDevice() {
     physicalDevice = candidates.rbegin()->second;
 
     auto deviceProperties = physicalDevice.getProperties();
-    physicalDeviceName = std::string{deviceProperties.deviceName};
+    const auto &name = deviceProperties.deviceName;
+    physicalDeviceName = std::string{name.data(), name.size()};
 
   } else {
     throw std::runtime_error("Failed to find a suitable GPU");
