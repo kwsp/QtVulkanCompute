@@ -476,6 +476,130 @@ void VulkanComputeManager::printInstanceExtensionSupport() {
     fmt::print("\t{}\n", static_cast<const char *>(extension.extensionName));
   }
 }
+
+void VulkanComputeManager::copyBufferToImage(
+    vk::Buffer buffer, vk::Image image, uint32_t imageWidth,
+    uint32_t imageHeight, vk::CommandBuffer commandBuffer) const {
+
+  bool useTempCommandBuffer = !commandBuffer;
+  if (useTempCommandBuffer) {
+    commandBuffer = beginTempOneTimeCommandBuffer();
+  }
+
+  // Transition the image to the correct layout before the copy operation
+  vk::ImageMemoryBarrier barrier{};
+  barrier.oldLayout = vk::ImageLayout::eUndefined;
+  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                vk::PipelineStageFlagBits::eTransfer,
+                                vk::DependencyFlags(), nullptr, nullptr,
+                                barrier);
+
+  // Copy data from the staging buffer to the image
+  vk::BufferImageCopy copyRegion{};
+  copyRegion.bufferOffset = 0;
+  copyRegion.bufferRowLength = 0;
+  copyRegion.bufferImageHeight = 0;
+  copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+  copyRegion.imageSubresource.mipLevel = 0;
+  copyRegion.imageSubresource.baseArrayLayer = 0;
+  copyRegion.imageSubresource.layerCount = 1;
+  copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
+  copyRegion.imageExtent = vk::Extent3D{imageWidth, imageHeight, 1};
+
+  commandBuffer.copyBufferToImage(
+      buffer, image, vk::ImageLayout::eTransferDstOptimal, copyRegion);
+
+  // Transition the image to the desired layout for shader access
+  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+  barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                vk::PipelineStageFlagBits::eFragmentShader,
+                                vk::DependencyFlags(), nullptr, nullptr,
+                                barrier);
+
+  if (useTempCommandBuffer) {
+    endOneTimeCommandBuffer(commandBuffer);
+  }
+}
+
+void VulkanComputeManager::copyImageToBuffer(
+    vk::Image image, vk::Buffer buffer, uint32_t width, uint32_t height,
+    vk::CommandBuffer commandBuffer) const {
+  bool useTempCommandBuffer = !commandBuffer;
+  if (useTempCommandBuffer) {
+    commandBuffer = beginTempOneTimeCommandBuffer();
+  }
+
+  // Transition the image layout to eTransferSrcOptimal
+  vk::ImageMemoryBarrier barrier{};
+  barrier.oldLayout =
+      vk::ImageLayout::eShaderReadOnlyOptimal; // Assuming the image is in a
+                                               // shader read-only layout
+  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+  barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+
+  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                vk::PipelineStageFlagBits::eTransfer,
+                                vk::DependencyFlags(), nullptr, nullptr,
+                                barrier);
+
+  // 3. Copy the image to the buffer
+  vk::BufferImageCopy copyRegion{};
+  copyRegion.bufferOffset = 0;
+  copyRegion.bufferRowLength = 0;   // Tightly packed
+  copyRegion.bufferImageHeight = 0; // Tightly packed
+  copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+  copyRegion.imageSubresource.mipLevel = 0;
+  copyRegion.imageSubresource.baseArrayLayer = 0;
+  copyRegion.imageSubresource.layerCount = 1;
+  copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
+  copyRegion.imageExtent = vk::Extent3D{width, height, 1};
+
+  commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal,
+                                  buffer, copyRegion);
+
+  // Transition the image back to its original layout if needed
+  barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+  barrier.newLayout =
+      vk::ImageLayout::eShaderReadOnlyOptimal; // Or whatever the original
+                                               // layout was
+  barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+  barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                vk::PipelineStageFlagBits::eFragmentShader,
+                                vk::DependencyFlags(), nullptr, nullptr,
+                                barrier);
+
+  if (useTempCommandBuffer) {
+    endOneTimeCommandBuffer(commandBuffer);
+  }
+}
+
 } // namespace vcm
 
 // NOLINTEND(*-reinterpret-cast)

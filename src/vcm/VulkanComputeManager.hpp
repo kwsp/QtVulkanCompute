@@ -57,136 +57,21 @@ public:
 
   void copyBufferToImage(vk::Buffer buffer, vk::Image image,
                          uint32_t imageWidth, uint32_t imageHeight,
-                         vk::CommandBuffer commandBuffer = nullptr) const {
-
-    bool useTempCommandBuffer = !commandBuffer;
-    if (useTempCommandBuffer) {
-      commandBuffer = beginTempOneTimeCommandBuffer();
-    }
-
-    // Transition the image to the correct layout before the copy operation
-    vk::ImageMemoryBarrier barrier{};
-    barrier.oldLayout = vk::ImageLayout::eUndefined;
-    barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = vk::AccessFlagBits::eNone;
-    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                  vk::PipelineStageFlagBits::eTransfer,
-                                  vk::DependencyFlags(), nullptr, nullptr,
-                                  barrier);
-
-    // Copy data from the staging buffer to the image
-    vk::BufferImageCopy copyRegion{};
-    copyRegion.bufferOffset = 0;
-    copyRegion.bufferRowLength = 0;
-    copyRegion.bufferImageHeight = 0;
-    copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    copyRegion.imageSubresource.mipLevel = 0;
-    copyRegion.imageSubresource.baseArrayLayer = 0;
-    copyRegion.imageSubresource.layerCount = 1;
-    copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
-    copyRegion.imageExtent = vk::Extent3D{imageWidth, imageHeight, 1};
-
-    commandBuffer.copyBufferToImage(
-        buffer, image, vk::ImageLayout::eTransferDstOptimal, copyRegion);
-
-    // Transition the image to the desired layout for shader access
-    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                  vk::PipelineStageFlagBits::eFragmentShader,
-                                  vk::DependencyFlags(), nullptr, nullptr,
-                                  barrier);
-
-    if (useTempCommandBuffer) {
-      endOneTimeCommandBuffer(commandBuffer);
-    }
-  }
+                         vk::CommandBuffer commandBuffer = nullptr) const;
 
   void copyImageToBuffer(vk::Image image, vk::Buffer buffer, uint32_t width,
-                         uint32_t height, vk::CommandBuffer commandBuffer) {
-    bool useTempCommandBuffer = !commandBuffer;
-    if (useTempCommandBuffer) {
-      commandBuffer = beginTempOneTimeCommandBuffer();
-    }
-
-    // Transition the image layout to eTransferSrcOptimal
-    vk::ImageMemoryBarrier barrier{};
-    barrier.oldLayout =
-        vk::ImageLayout::eShaderReadOnlyOptimal; // Assuming the image is in a
-                                                 // shader read-only layout
-    barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
-    barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                  vk::PipelineStageFlagBits::eTransfer,
-                                  vk::DependencyFlags(), nullptr, nullptr,
-                                  barrier);
-
-    // 3. Copy the image to the buffer
-    vk::BufferImageCopy copyRegion{};
-    copyRegion.bufferOffset = 0;
-    copyRegion.bufferRowLength = 0;   // Tightly packed
-    copyRegion.bufferImageHeight = 0; // Tightly packed
-    copyRegion.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    copyRegion.imageSubresource.mipLevel = 0;
-    copyRegion.imageSubresource.baseArrayLayer = 0;
-    copyRegion.imageSubresource.layerCount = 1;
-    copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
-    copyRegion.imageExtent = vk::Extent3D{width, height, 1};
-
-    commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal,
-                                    buffer, copyRegion);
-
-    // Transition the image back to its original layout if needed
-    barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.newLayout =
-        vk::ImageLayout::eShaderReadOnlyOptimal; // Or whatever the original
-                                                 // layout was
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                  vk::PipelineStageFlagBits::eFragmentShader,
-                                  vk::DependencyFlags(), nullptr, nullptr,
-                                  barrier);
-
-    if (useTempCommandBuffer) {
-      endOneTimeCommandBuffer(commandBuffer);
-    }
-  }
+                         uint32_t height,
+                         vk::CommandBuffer commandBuffer) const;
 
   // Transfer data from a user host buffer to a Vulkan staging buffer
   template <typename T>
   void copyToStagingBuffer(std::span<const T> data,
                            vk::DeviceMemory memory) const {
+    vk::DeviceSize size = data.size() * sizeof(T);
     // Step 1: Map the memory associated with the staging buffer
-    void *mappedMemory = device->mapMemory(memory, 0, data.size() * sizeof(T));
-
+    void *mappedMemory = device->mapMemory(memory, 0, size);
     // Step 2: Copy data from the vector to the mapped memory
-    memcpy(mappedMemory, data.data(), data.size() * sizeof(T));
-
+    memcpy(mappedMemory, data.data(), static_cast<size_t>(size));
     // Step 3: Unmap the memory so the GPU can access it
     device->unmapMemory(memory);
   }
@@ -200,10 +85,8 @@ public:
   void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
     vk::DeviceSize size = data.size() * sizeof(T);
     void *mappedMemory = device->mapMemory(memory, 0, size);
-
-    // Copy the data from GPU memory to a local vector
+    // Copy the data from GPU memory to a local buffer
     memcpy(data.data(), mappedMemory, static_cast<size_t>(size));
-
     // Unmap the memory after retrieving the data
     device->unmapMemory(memory);
   }
