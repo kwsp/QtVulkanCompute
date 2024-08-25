@@ -82,65 +82,6 @@ void createComputePipeline(vcm::VulkanComputeManager &cm,
   resources.pipeline = std::move(pipelineResult.value);
 }
 
-void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
-                                ComputeShaderResources &resources,
-                                const ComputeShaderBuffers<2> &buffers) {
-
-  // Create descriptor set
-  {
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = cm.descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &*resources.descriptorSetLayout;
-
-    auto descriptorSets = cm.device->allocateDescriptorSetsUnique(allocInfo);
-    resources.descriptorSet = std::move(descriptorSets.front());
-  }
-
-  // Bind device buffers to the descriptor set
-  {
-    vk::DescriptorBufferInfo bufferInfo1{};
-    bufferInfo1.buffer = buffers.in[0].buffer.buffer;
-    bufferInfo1.offset = 0;
-    bufferInfo1.range = VK_WHOLE_SIZE;
-
-    vk::DescriptorBufferInfo bufferInfo2{};
-    bufferInfo2.buffer = buffers.in[1].buffer.buffer;
-    bufferInfo2.offset = 0;
-    bufferInfo2.range = VK_WHOLE_SIZE;
-
-    vk::DescriptorBufferInfo outputBufferInfo{};
-    outputBufferInfo.buffer = buffers.out.buffer.buffer;
-    outputBufferInfo.offset = 0;
-    outputBufferInfo.range = VK_WHOLE_SIZE;
-
-    std::array<vk::WriteDescriptorSet, 3> descriptorWrites{};
-
-    descriptorWrites[0].dstSet = resources.descriptorSet.get();
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo1;
-
-    descriptorWrites[1].dstSet = resources.descriptorSet.get();
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pBufferInfo = &bufferInfo2;
-
-    descriptorWrites[2].dstSet = resources.descriptorSet.get();
-    descriptorWrites[2].dstBinding = 2;
-    descriptorWrites[2].dstArrayElement = 0;
-    descriptorWrites[2].descriptorType = vk::DescriptorType::eStorageBuffer;
-    descriptorWrites[2].descriptorCount = 1;
-    descriptorWrites[2].pBufferInfo = &outputBufferInfo;
-
-    cm.device->updateDescriptorSets(descriptorWrites, {});
-  }
-}
-
 // Bind command buffer to pipeline
 // Bind command buffer to descriptor set
 // Dispatch command buffer
@@ -180,7 +121,7 @@ public:
                  const ComputeShaderBuffers<NInputBuf> &buffers) {
 
     createDescriptorSet(cm);
-    createDescriptorPoolAndSet(cm, resources, buffers);
+    createDescriptorPoolAndSet(cm, buffers);
     createComputePipeline(cm, resources);
   }
 
@@ -274,6 +215,64 @@ private:
 
     resources.descriptorSetLayout =
         cm.device->createDescriptorSetLayoutUnique(createInfo);
+  }
+
+  void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
+                                  const ComputeShaderBuffers<2> &buffers) {
+
+    // Create descriptor set
+    {
+      vk::DescriptorSetAllocateInfo allocInfo{};
+      allocInfo.descriptorPool = cm.descriptorPool;
+      allocInfo.descriptorSetCount = 1;
+      allocInfo.pSetLayouts = &*resources.descriptorSetLayout;
+
+      auto descriptorSets = cm.device->allocateDescriptorSetsUnique(allocInfo);
+      resources.descriptorSet = std::move(descriptorSets.front());
+    }
+
+    // Bind device buffers to the descriptor set
+    {
+      vk::DescriptorBufferInfo bufferInfo1{};
+      bufferInfo1.buffer = buffers.in[0].buffer.buffer;
+      bufferInfo1.offset = 0;
+      bufferInfo1.range = VK_WHOLE_SIZE;
+
+      vk::DescriptorBufferInfo bufferInfo2{};
+      bufferInfo2.buffer = buffers.in[1].buffer.buffer;
+      bufferInfo2.offset = 0;
+      bufferInfo2.range = VK_WHOLE_SIZE;
+
+      vk::DescriptorBufferInfo outputBufferInfo{};
+      outputBufferInfo.buffer = buffers.out.buffer.buffer;
+      outputBufferInfo.offset = 0;
+      outputBufferInfo.range = VK_WHOLE_SIZE;
+
+      std::array<vk::WriteDescriptorSet, 3> descriptorWrites{};
+
+      descriptorWrites[0].dstSet = resources.descriptorSet.get();
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].dstArrayElement = 0;
+      descriptorWrites[0].descriptorType = vk::DescriptorType::eStorageBuffer;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &bufferInfo1;
+
+      descriptorWrites[1].dstSet = resources.descriptorSet.get();
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].dstArrayElement = 0;
+      descriptorWrites[1].descriptorType = vk::DescriptorType::eStorageBuffer;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pBufferInfo = &bufferInfo2;
+
+      descriptorWrites[2].dstSet = resources.descriptorSet.get();
+      descriptorWrites[2].dstBinding = 2;
+      descriptorWrites[2].dstArrayElement = 0;
+      descriptorWrites[2].descriptorType = vk::DescriptorType::eStorageBuffer;
+      descriptorWrites[2].descriptorCount = 1;
+      descriptorWrites[2].pBufferInfo = &outputBufferInfo;
+
+      cm.device->updateDescriptorSets(descriptorWrites, {});
+    }
   }
 };
 
