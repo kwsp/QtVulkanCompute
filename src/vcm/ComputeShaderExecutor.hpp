@@ -29,20 +29,30 @@ template <int NInputBuffers> struct ComputeShaderBuffers {
   int inWidth;
   int inHeight;
 
-  [[nodiscard]] vk::DeviceSize bufferSize() const {
+  int outWidth;
+  int outHeight;
+
+  [[nodiscard]] vk::DeviceSize inBufferSize() const {
     return inWidth * inHeight * sizeof(float);
+  }
+  [[nodiscard]] vk::DeviceSize outBufferSize() const {
+    return outWidth * outHeight * sizeof(float);
   }
 };
 
+// z is currently unused
 struct WorkGroupSize {
-  int x{16}, y{16}, z{0};
+  int x{16}, y{16}, z{1};
 };
 
 template <int NInputBuf, typename PushConstantT> class ShaderExecutor {
 public:
   ShaderExecutor(fs::path shaderFile, vcm::VulkanComputeManager &cm,
-                 const ComputeShaderBuffers<NInputBuf> &buffers)
-      : shaderFilename(std::move(shaderFile)) {
+                 const ComputeShaderBuffers<NInputBuf> &buffers,
+                 WorkGroupSize wgSize = WorkGroupSize{})
+      : shaderFilename(std::move(shaderFile)), wgSize(wgSize) {
+
+    assert(buffers.outWidth > 0 && buffers.outHeight > 0);
 
     createDescriptorSetLayout(cm);
     createDescriptorSet(cm, buffers);
@@ -69,14 +79,14 @@ public:
       for (int i = 0; i < NInputBuf; ++i) {
         // NOLINTNEXTLINE(*-constant-array-index)
         cm.copyBuffer(buffers.in[i].staging.buffer, buffers.in[i].buffer.buffer,
-                      buffers.bufferSize(), commandBuffer);
+                      buffers.inBufferSize(), commandBuffer);
       }
 
       vcm::memoryBarrierTransferThenCompute(commandBuffer);
     }
 
-    dispatchComputeShader(cm, commandBuffer, buffers.inWidth, buffers.inHeight,
-                          pushConstant);
+    dispatchComputeShader(cm, commandBuffer, buffers.outWidth,
+                          buffers.outHeight, pushConstant);
 
     {
       // (Optional) Step 4: Insert another pipeline barrier if needed
@@ -84,7 +94,7 @@ public:
 
       // Copy result back to staging
       cm.copyBuffer(buffers.out.buffer.buffer, buffers.out.staging.buffer,
-                    buffers.bufferSize(), commandBuffer);
+                    buffers.inBufferSize(), commandBuffer);
     }
 
     commandBuffer.end();
@@ -219,8 +229,8 @@ private:
   // Bind command buffer to descriptor set
   // Dispatch command buffer
   void dispatchComputeShader(vcm::VulkanComputeManager &cm,
-                             vk::CommandBuffer &commandBuffer, int inputWidth,
-                             int inputHeight,
+                             vk::CommandBuffer &commandBuffer, int outputWidth,
+                             int outputHeight,
                              const PushConstantT &pushConstant) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute,
                                resources.pipeline.get());
@@ -233,8 +243,8 @@ private:
                                 vk::ShaderStageFlagBits::eCompute, 0,
                                 sizeof(PushConstantT), &pushConstant);
 
-    commandBuffer.dispatch((inputWidth + wgSize.x - 1) / wgSize.x,
-                           (inputHeight + wgSize.y - 1) / wgSize.y, 1);
+    commandBuffer.dispatch((outputWidth + wgSize.x - 1) / wgSize.x,
+                           (outputHeight + wgSize.y - 1) / wgSize.y, 1);
   }
 };
 

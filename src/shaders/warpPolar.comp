@@ -1,0 +1,44 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input and output image buffers
+layout(binding = 0) readonly buffer InputImage {
+    float data[];
+} src;
+
+layout(binding = 1) writeonly buffer OutputImage {
+    float data[];
+} dst;
+
+layout(push_constant) uniform PushConstants {
+    vec2 center;      // Center of the polar transform
+    float maxRadius;  // Maximum radius for the transformation
+    int width;        // Width of the input image
+    int height;       // Height of the input image
+} pushConstants;
+
+void main() {
+    ivec2 polarCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    // Compute the normalized polar coordinates
+    float angle = float(polarCoords.x) / float(pushConstants.width) * 2.0 * 3.14159265359; // Angle in radians
+    float radius = float(polarCoords.y) / float(pushConstants.height) * pushConstants.maxRadius;
+
+    // Convert polar to cartesian coordinates
+    float x = pushConstants.center.x + radius * cos(angle);
+    float y = pushConstants.center.y + radius * sin(angle);
+
+    // Clamp the coordinates to the image bounds
+    x = clamp(x, 0.0, float(pushConstants.width - 1));
+    y = clamp(y, 0.0, float(pushConstants.height - 1));
+
+    // Calculate the linear index for the input image
+    int srcIndex = int(y) * pushConstants.width + int(x);
+
+    // Calculate the linear index for the output image
+    int dstIndex = polarCoords.y * pushConstants.width + polarCoords.x;
+
+    // Sample the input image and write to the output image
+    dst.data[dstIndex] = src.data[srcIndex];
+}

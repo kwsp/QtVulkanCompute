@@ -3,12 +3,8 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 // Input buffer and output buffer
-layout(binding = 0) readonly buffer InputImage1 {
-    float image1[];
-};
-layout(binding = 1) writeonly buffer OutputBuffer {
-    float result[];
-};
+layout(binding = 0) readonly buffer Image { float pimg[]; };
+layout(binding = 1) writeonly buffer Result { float pres[]; };
 
 layout(push_constant) uniform PushConstants {
     int width;   // Width of the matrix
@@ -26,34 +22,34 @@ void main() {
     int globalIndex = coords.y * pushConstants.width + coords.x;
 
     // Load the central part of the block
-    localData[localY][localX] = image1[globalIndex];
+    localData[localY][localX] = pimg[globalIndex];
 
     // Load the borders (optimized to minimize branching)
     if (gl_LocalInvocationID.x == 0) {
-        localData[localY][localX - 1] = image1[globalIndex - 1];
+        localData[localY][localX - 1] = pimg[globalIndex - 1];
     }
     if (gl_LocalInvocationID.x == 15) {
-        localData[localY][localX + 1] = image1[globalIndex + 1];
+        localData[localY][localX + 1] = pimg[globalIndex + 1];
     }
     if (gl_LocalInvocationID.y == 0) {
-        localData[localY - 1][localX] = image1[globalIndex - pushConstants.width];
+        localData[localY - 1][localX] = pimg[globalIndex - pushConstants.width];
     }
     if (gl_LocalInvocationID.y == 15) {
-        localData[localY + 1][localX] = image1[globalIndex + pushConstants.width];
+        localData[localY + 1][localX] = pimg[globalIndex + pushConstants.width];
     }
 
     // Load corners only if needed (further optimization)
     if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
-        localData[localY - 1][localX - 1] = image1[globalIndex - pushConstants.width - 1];
+        localData[localY - 1][localX - 1] = pimg[globalIndex - pushConstants.width - 1];
     }
     if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 0) {
-        localData[localY - 1][localX + 1] = image1[globalIndex - pushConstants.width + 1];
+        localData[localY - 1][localX + 1] = pimg[globalIndex - pushConstants.width + 1];
     }
     if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 15) {
-        localData[localY + 1][localX - 1] = image1[globalIndex + pushConstants.width - 1];
+        localData[localY + 1][localX - 1] = pimg[globalIndex + pushConstants.width - 1];
     }
     if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 15) {
-        localData[localY + 1][localX + 1] = image1[globalIndex + pushConstants.width + 1];
+        localData[localY + 1][localX + 1] = pimg[globalIndex + pushConstants.width + 1];
     }
 
     // Synchronize to ensure all threads have loaded their data into shared memory
@@ -88,5 +84,5 @@ void main() {
     float median = neighborhood[4];
 
     // Write the median to the output buffer
-    result[globalIndex] = median;
+    pres[globalIndex] = median;
 }

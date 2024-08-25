@@ -1,6 +1,7 @@
 #include "vcm/vcm.hpp"
 #include <cmath>
 #include <fmt/core.h>
+#include <glm/glm.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -9,9 +10,12 @@
 #include <vulkan/vulkan.hpp>
 
 // Question: uniform buffer vs push constant
+
 struct PushConstantData {
-  int width;
-  int height;
+  glm::vec2 center; // Center of the polar transform
+  float maxRadius;  // Maximum radius for the transformation
+  int width;        // Width of the input image
+  int height;       // Height of the input image
 };
 
 bool verifyOutput(const cv::Mat &mat, const cv::Mat &expect) {
@@ -29,7 +33,7 @@ bool verifyOutput(const cv::Mat &mat, const cv::Mat &expect) {
 
 int main() {
 
-  std::string filename = "/Users/tnie/Downloads/noise.png";
+  std::string filename = "/Users/tnie/Downloads/stripes.jpg";
   cv::Mat matIn;
 
   matIn = cv::imread(filename, cv::IMREAD_GRAYSCALE);
@@ -39,6 +43,8 @@ int main() {
   if (!matIn.empty()) {
     matIn.convertTo(matIn, CV_32F);
     matIn = matIn / 255;
+
+    cv::resize(matIn, matIn, {1000, 2000});
 
     WIDTH = matIn.cols;
     HEIGHT = matIn.rows;
@@ -55,18 +61,29 @@ int main() {
   /*
   Create buffers
   */
-  vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
+  const int r = std::min(WIDTH, HEIGHT);
 
-  vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(bufferSize);
-  vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(bufferSize);
+  PushConstantData pushConstant{};
+  pushConstant.width = r;
+  pushConstant.height = r;
+  glm::vec2 center = {r / 2, r / 2};
+  pushConstant.center = center;
+  pushConstant.maxRadius = std::min(center.x, center.y);
+
+  vk::DeviceSize inBufferSize = WIDTH * HEIGHT * sizeof(float);
+  vk::DeviceSize outBufSize = r * r * sizeof(float);
+
+  vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(inBufferSize);
+  vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(inBufferSize);
 
   vcm::ComputeShaderBuffers<1> buffers{};
-  auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
-  auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
+  auto outputBufStaging = cm.createStagingBufferDst(outBufSize);
+  auto outputBuf = cm.createDeviceBufferSrc(outBufSize);
   buffers.inWidth = WIDTH;
   buffers.inHeight = HEIGHT;
-  buffers.outWidth = WIDTH;
-  buffers.outHeight = HEIGHT;
+
+  buffers.outWidth = r;
+  buffers.outHeight = r;
 
   buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()}}};
   buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
@@ -80,13 +97,11 @@ int main() {
       buffers.in[0].staging);
 
   /* Create shader */
-  vcm::ShaderExecutor<1, PushConstantData> shader("shaders/medianBlur2D.spv",
-                                                  cm, buffers);
+  vcm::ShaderExecutor<1, PushConstantData> shader(
+      "shaders/warpPolarInverse.spv", cm, buffers);
 
   auto &commandBuffer = cm.commandBuffer;
 
-  PushConstantData pushConstant{static_cast<int>(WIDTH),
-                                static_cast<int>(HEIGHT)};
   shader.recordCommandBuffer(cm, commandBuffer, buffers, pushConstant);
 
   // Submit the command buffer to the compute queue
@@ -101,24 +116,24 @@ int main() {
     cm.queue.waitIdle();
   }
 
-  cv::Mat matOut(HEIGHT, WIDTH, CV_32FC1);
+  cv::Mat matOut(r, r, CV_32FC1);
   cm.copyFromStagingBuffer<float>(
-      buffers.out.staging,
-      std::span<float>((float *)matOut.data, WIDTH * HEIGHT));
+      buffers.out.staging, std::span<float>((float *)matOut.data, r * r));
 
-  cv::imwrite("vulkan_blur.png", matOut);
-  cv::imshow("Vulkan blur", matOut);
+  cv::imshow("Vulkan warp", matOut);
   cv::waitKey();
 
   cv::Mat matCvOut;
   {
-    vcm::TimeIt<true> timeit("OpenCV blur");
-    cv::medianBlur(matIn, matCvOut, 3);
+    vcm::TimeIt<true> timeit("OpenCV warp");
+
+    cv::warpPolar(matIn, matCvOut, {r, r}, {(float)r / 2, (float)r / 2},
+                  pushConstant.maxRadius,
+                  cv::WARP_INVERSE_MAP | cv::WARP_FILL_OUTLIERS);
   }
-  cv::imwrite("cv_blur.png", matCvOut);
   verifyOutput(matOut, matCvOut);
 
-  cv::imshow("CV blur", matCvOut);
+  cv::imshow("CV warp", matCvOut);
   cv::waitKey();
 
   //   {

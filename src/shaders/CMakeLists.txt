@@ -6,11 +6,12 @@ find_package(glslang CONFIG REQUIRED)
 find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 
 set(SHADERS
-    warpPolarCompute.comp
     add2D.comp
     addImage2D.comp
     fma2D.comp
     medianBlur2D.comp
+    warpPolar.comp
+    warpPolarInverse.comp
 )
 
 cmake_path(GET SHADER_BINARY_DIR PARENT_PATH SRC_BINARY_DIR)

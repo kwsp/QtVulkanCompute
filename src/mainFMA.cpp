@@ -22,8 +22,8 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
 }
 
 int main() {
-  const uint32_t WIDTH = 512;
-  const uint32_t HEIGHT = 512;
+  const uint32_t WIDTH = 512 * 2;
+  const uint32_t HEIGHT = 512 * 2;
 
   vcm::VulkanComputeManager cm;
 
@@ -46,6 +46,8 @@ int main() {
   auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
   buffers.inWidth = WIDTH;
   buffers.inHeight = HEIGHT;
+  buffers.outWidth = WIDTH;
+  buffers.outHeight = HEIGHT;
 
   buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
                  {inputBuf2.ref(), inputBuf2Staging.ref()},
@@ -63,7 +65,7 @@ int main() {
 
   /* Create shader */
   vcm::ShaderExecutor<3, PushConstantData> shader("shaders/fma2D.spv", cm,
-                                                  buffers);
+                                                  buffers, {16, 16, 1});
 
   auto &commandBuffer = cm.commandBuffer;
 

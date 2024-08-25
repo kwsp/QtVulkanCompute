@@ -10,6 +10,7 @@
     },
     "vulkan",
     "vulkan-validationlayers",
+    "glm",
     {
       "name": "glslang",
       "features": ["tools"]

@@ -1,3 +1,4 @@
+#include "vcm/ComputeShaderExecutor.hpp"
 #include "vcm/vcm.hpp"
 #include <fmt/core.h>
 #include <vector>
@@ -42,6 +43,8 @@ int main() {
   auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
   buffers.inWidth = WIDTH;
   buffers.inHeight = HEIGHT;
+  buffers.outWidth = WIDTH;
+  buffers.outHeight = HEIGHT;
 
   buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
                  {inputBuf2.ref(), inputBuf2Staging.ref()}}};
@@ -56,7 +59,7 @@ int main() {
 
   /* Create shader */
   vcm::ShaderExecutor<2, PushConstantData> shader("shaders/add2D.spv", cm,
-                                                  buffers);
+                                                  buffers, {8, 8, 1});
 
   auto &commandBuffer = cm.commandBuffer;
 

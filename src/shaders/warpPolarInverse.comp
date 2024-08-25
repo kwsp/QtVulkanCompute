@@ -1,0 +1,56 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input buffer (polar coordinates) and output buffer (cartesian coordinates)
+layout(binding = 0) readonly buffer InputPolarImage {
+    float data[];
+} src;
+
+layout(binding = 1) writeonly buffer OutputCartesianImage {
+    float data[];
+} dst;
+
+layout(push_constant) uniform PushConstants {
+    vec2 center;      // Center of the polar transform
+    float maxRadius;  // Maximum radius for the transformation
+    int width;        // Width of the output image (cartesian coordinates)
+    int height;       // Height of the output image (cartesian coordinates)
+} pushConstants;
+
+void main() {
+    ivec2 cartesianCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    // Calculate the offset from the center
+    vec2 offset = vec2(cartesianCoords) - pushConstants.center;
+
+    // Compute the polar coordinates from the cartesian coordinates
+    float radius = length(offset);
+    float angle = atan(offset.y, offset.x); // Angle in radians
+
+    // Normalize the angle to the range [0, 2π]
+    if (angle < 0.0) {
+        angle += 2.0 * 3.14159265359;
+    }
+
+    // Map the angle and radius to the corresponding pixel in the polar image
+    float normRadius = radius / pushConstants.maxRadius;
+    float normAngle = angle / (2.0 * 3.14159265359);
+
+    // Convert to integer pixel coordinates in the polar image
+    int polarX = int(normAngle * float(pushConstants.width));
+    int polarY = int(normRadius * float(pushConstants.height));
+
+    // Clamp the coordinates to ensure they are within bounds
+    polarX = clamp(polarX, 0, pushConstants.width - 1);
+    polarY = clamp(polarY, 0, pushConstants.height - 1);
+
+    // Calculate the linear index for the input polar image
+    int srcIndex = polarY * pushConstants.width + polarX;
+
+    // Calculate the linear index for the output cartesian image
+    int dstIndex = cartesianCoords.y * pushConstants.width + cartesianCoords.x;
+
+    // Sample the polar image and write to the output cartesian image
+    dst.data[dstIndex] = src.data[srcIndex];
+}

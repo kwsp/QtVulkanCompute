@@ -4,6 +4,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 find_package(Armadillo CONFIG REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(glm CONFIG REQUIRED)
 
 add_subdirectory(shaders)
 
@@ -101,6 +102,25 @@ target_link_libraries(${NAME} PRIVATE
   fmt::fmt
   armadillo
   Vulkan::Vulkan
+  opencv_world
+)
+add_dependencies(${NAME} compile_shaders)
+set_target_properties(${NAME} PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
+)
+
+set(NAME warpPolar)
+add_executable(${NAME}
+  mainWarpPolar.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
+)
+target_link_libraries(${NAME} PRIVATE
+  fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+  glm::glm
   opencv_world
 )
 add_dependencies(${NAME} compile_shaders)
