@@ -13,9 +13,18 @@ namespace vcm {
 
 namespace fs = std::filesystem;
 
+struct VulkanBufferRef {
+  vk::Buffer buffer;
+  vk::DeviceMemory memory;
+};
+
 struct VulkanBuffer {
   vk::UniqueBuffer buffer;
   vk::UniqueDeviceMemory memory;
+
+  [[nodiscard]] VulkanBufferRef ref() const {
+    return {buffer.get(), memory.get()};
+  }
 };
 
 struct VulkanImage {
@@ -108,6 +117,11 @@ public:
                            VulkanBuffer &stagingBuffer) const {
     copyToStagingBuffer(data, stagingBuffer.memory.get());
   }
+  template <typename T>
+  void copyToStagingBuffer(std::span<const T> data,
+                           VulkanBufferRef &stagingBuffer) const {
+    copyToStagingBuffer(data, stagingBuffer.memory);
+  }
 
   template <typename T>
   void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
@@ -122,6 +136,11 @@ public:
   void copyFromStagingBuffer(const VulkanBuffer &stagingBuffer,
                              std::span<T> data) const {
     copyFromStagingBuffer<T>(stagingBuffer.memory.get(), data);
+  }
+  template <typename T>
+  void copyFromStagingBuffer(const VulkanBufferRef &stagingBuffer,
+                             std::span<T> data) const {
+    copyFromStagingBuffer<T>(stagingBuffer.memory, data);
   }
 
   // private:

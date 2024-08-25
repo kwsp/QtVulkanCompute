@@ -21,16 +21,17 @@ struct ComputeShaderResources {
 };
 
 // Shader specific buffer
-struct ComputeShaderBuffers {
-  // Question: uniform buffer vs push constant
-  vcm::VulkanBuffer stagingBuffer1;
-  vcm::VulkanBuffer stagingBuffer2;
-  vcm::VulkanBuffer stagingBuffer3;
+template <int NInputBuffers> struct ComputeShaderBuffers {
+  struct BufferPair {
+    vcm::VulkanBufferRef buffer;
+    vcm::VulkanBufferRef staging;
+  };
 
-  vcm::VulkanBuffer buffer1;
-  vcm::VulkanBuffer buffer2;
-  vcm::VulkanBuffer buffer3;
+  std::array<BufferPair, NInputBuffers> in;
+  BufferPair out;
 };
+
+// Question: uniform buffer vs push constant
 struct PushConstantData {
   int width;
   int height;
@@ -76,7 +77,7 @@ void createComputePipeline(vcm::VulkanComputeManager &cm,
 
 void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
                                 ComputeShaderResources &resources,
-                                ComputeShaderBuffers &buffers) {
+                                ComputeShaderBuffers<2> &buffers) {
 
   // Create descriptor set
   {
@@ -92,17 +93,17 @@ void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
   // Bind device buffers to the descriptor set
   {
     vk::DescriptorBufferInfo bufferInfo1{};
-    bufferInfo1.buffer = buffers.buffer1.buffer.get();
+    bufferInfo1.buffer = buffers.in[0].buffer.buffer;
     bufferInfo1.offset = 0;
     bufferInfo1.range = VK_WHOLE_SIZE;
 
     vk::DescriptorBufferInfo bufferInfo2{};
-    bufferInfo2.buffer = buffers.buffer2.buffer.get();
+    bufferInfo2.buffer = buffers.in[1].buffer.buffer;
     bufferInfo2.offset = 0;
     bufferInfo2.range = VK_WHOLE_SIZE;
 
     vk::DescriptorBufferInfo outputBufferInfo{};
-    outputBufferInfo.buffer = buffers.buffer3.buffer.get();
+    outputBufferInfo.buffer = buffers.out.buffer.buffer;
     outputBufferInfo.offset = 0;
     outputBufferInfo.range = VK_WHOLE_SIZE;
 
@@ -158,7 +159,7 @@ void dispatchComputeShader(vcm::VulkanComputeManager &cm,
 void recordCommandBuffer(vcm::VulkanComputeManager &cm,
                          vk::CommandBuffer commandBuffer,
                          ComputeShaderResources &resources,
-                         ComputeShaderBuffers &buffers,
+                         ComputeShaderBuffers<2> &buffers,
                          vk::DeviceSize bufferSize, int width, int height) {
   uspam::TimeIt<true> timeit("Recording command buffer");
 
@@ -170,29 +171,12 @@ void recordCommandBuffer(vcm::VulkanComputeManager &cm,
   }
 
   // // Copy data from staging to host buffers
-  // {
-  //   // Synchronous copy
-  //   uspam::TimeIt<true> timeit("Copy buffer");
-  //   cm.copyBuffer(buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
-  //                 bufferSize);
-  //   cm.copyBuffer(buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
-  //                 bufferSize);
-
-  //   std::array<vcm::VulkanComputeManager::CopyBufferT, 2> buffersToCopy = {
-  //       {{buffers.stagingBuffer1.buffer, buffers.buffer1.buffer,
-  //       bufferSize},
-  //        {buffers.stagingBuffer2.buffer, buffers.buffer2.buffer,
-  //         bufferSize}}};
-
-  //   cm.copyBuffers(buffersToCopy);
-  // }
-
   {
     // Async copy with barrier
-    cm.copyBuffer(buffers.stagingBuffer1.buffer.get(),
-                  buffers.buffer1.buffer.get(), bufferSize, commandBuffer);
-    cm.copyBuffer(buffers.stagingBuffer2.buffer.get(),
-                  buffers.buffer2.buffer.get(), bufferSize, commandBuffer);
+    cm.copyBuffer(buffers.in[0].staging.buffer, buffers.in[0].buffer.buffer,
+                  bufferSize, commandBuffer);
+    cm.copyBuffer(buffers.in[1].staging.buffer, buffers.in[1].buffer.buffer,
+                  bufferSize, commandBuffer);
 
     vk::MemoryBarrier memoryBarrier{};
     memoryBarrier.srcAccessMask =
@@ -223,9 +207,8 @@ void recordCommandBuffer(vcm::VulkanComputeManager &cm,
         {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
     // Copy result back to staging
-    cm.copyBuffer(buffers.buffer3.buffer.get(),
-                  buffers.stagingBuffer3.buffer.get(), bufferSize,
-                  commandBuffer);
+    cm.copyBuffer(buffers.out.buffer.buffer, buffers.out.staging.buffer,
+                  bufferSize, commandBuffer);
   }
 
   commandBuffer.end();
@@ -258,23 +241,24 @@ int main() {
 
   ShaderExecutor<2> shader;
 
-  ComputeShaderBuffers buffers{};
-
   /*
   Create buffers
   */
   vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
+  ComputeShaderBuffers<2> buffers{};
 
-  {
-    buffers.stagingBuffer1 = cm.createStagingBufferSrc(bufferSize);
-    buffers.buffer1 = cm.createDeviceBufferDst(bufferSize);
+  vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(bufferSize);
+  vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(bufferSize);
 
-    buffers.stagingBuffer2 = cm.createStagingBufferSrc(bufferSize);
-    buffers.buffer2 = cm.createDeviceBufferDst(bufferSize);
+  vcm::VulkanBuffer inputBuf2Staging = cm.createStagingBufferSrc(bufferSize);
+  vcm::VulkanBuffer inputBuf2 = cm.createDeviceBufferDst(bufferSize);
 
-    buffers.stagingBuffer3 = cm.createStagingBufferDst(bufferSize);
-    buffers.buffer3 = cm.createDeviceBufferSrc(bufferSize);
-  }
+  auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
+  auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
+
+  buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
+                 {inputBuf2.ref(), inputBuf2Staging.ref()}}};
+  buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
 
   // descriptorset layout bindings
   {
@@ -311,8 +295,8 @@ int main() {
   std::vector<float> input1(WIDTH * HEIGHT, 1);
   std::vector<float> input2(WIDTH * HEIGHT, 2);
 
-  cm.copyToStagingBuffer<float>(input1, buffers.stagingBuffer1);
-  cm.copyToStagingBuffer<float>(input2, buffers.stagingBuffer2);
+  cm.copyToStagingBuffer<float>(input1, buffers.in[0].staging);
+  cm.copyToStagingBuffer<float>(input2, buffers.in[1].staging);
 
   auto &commandBuffer = cm.commandBuffer;
   recordCommandBuffer(cm, cm.commandBuffer, shader.resources, buffers,
@@ -331,7 +315,7 @@ int main() {
   }
 
   std::vector<float> outputData(WIDTH * HEIGHT);
-  cm.copyFromStagingBuffer<float>(buffers.stagingBuffer3, outputData);
+  cm.copyFromStagingBuffer<float>(buffers.out.staging, outputData);
 
   // Verify that each element in the output matrix is 3.0f
   {
