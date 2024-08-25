@@ -9,6 +9,7 @@ set(SHADERS
     warpPolarCompute.comp
     add2D.comp
     addImage2D.comp
+    fma2D.comp
 )
 
 cmake_path(GET SHADER_BINARY_DIR PARENT_PATH SRC_BINARY_DIR)

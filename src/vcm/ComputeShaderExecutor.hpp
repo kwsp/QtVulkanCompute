@@ -44,8 +44,8 @@ public:
                  const ComputeShaderBuffers<NInputBuf> &buffers)
       : shaderFilename(std::move(shaderFile)) {
 
-    createDescriptorSet(cm);
-    createDescriptorPoolAndSet(cm, buffers);
+    createDescriptorSetLayout(cm);
+    createDescriptorSet(cm, buffers);
     createComputePipeline(cm);
   }
 
@@ -95,7 +95,7 @@ private:
   WorkGroupSize wgSize;
   fs::path shaderFilename;
 
-  void createDescriptorSet(vcm::VulkanComputeManager &cm) {
+  void createDescriptorSetLayout(vcm::VulkanComputeManager &cm) {
     // descriptorset layout bindings
     const auto makeComputeDescriptorSetLayoutBinding = [](int binding) {
       vk::DescriptorSetLayoutBinding descriptorSetLayoutBinding;
@@ -126,8 +126,8 @@ private:
         cm.device->createDescriptorSetLayoutUnique(createInfo);
   }
 
-  void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
-                                  const ComputeShaderBuffers<2> &buffers) {
+  void createDescriptorSet(vcm::VulkanComputeManager &cm,
+                           const ComputeShaderBuffers<NInputBuf> &buffers) {
 
     // Create descriptor set
     {
@@ -144,7 +144,7 @@ private:
     {
       constexpr int TotalBuffers = NInputBuf + 1;
       std::array<vk::DescriptorBufferInfo, TotalBuffers> bufferInfo{};
-      std::array<vk::WriteDescriptorSet, 3> descriptorWrites{};
+      std::array<vk::WriteDescriptorSet, TotalBuffers> descriptorWrites{};
 
       // NOLINTBEGIN(*-constant-array-index)
       for (int i = 0; i < NInputBuf; ++i) {

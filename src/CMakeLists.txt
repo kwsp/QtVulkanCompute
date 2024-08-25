@@ -55,6 +55,24 @@ set_target_properties(add PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
+
+add_executable(fma
+  mainFMA.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
+  vcm/ComputeShaderExecutor.hpp
+)
+target_link_libraries(fma PRIVATE
+  fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+)
+add_dependencies(fma compile_shaders)
+set_target_properties(fma PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
+)
+
 set(NAME addImage2D)
 add_executable(${NAME}
   mainAddImage2d.cpp

@@ -1,4 +1,5 @@
 #include "vcm/vcm.hpp"
+#include <cmath>
 #include <fmt/core.h>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -37,25 +38,31 @@ int main() {
   vcm::VulkanBuffer inputBuf2Staging = cm.createStagingBufferSrc(bufferSize);
   vcm::VulkanBuffer inputBuf2 = cm.createDeviceBufferDst(bufferSize);
 
-  vcm::ComputeShaderBuffers<2> buffers{};
+  vcm::VulkanBuffer inputBuf3Staging = cm.createStagingBufferSrc(bufferSize);
+  vcm::VulkanBuffer inputBuf3 = cm.createDeviceBufferDst(bufferSize);
+
+  vcm::ComputeShaderBuffers<3> buffers{};
   auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
   auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
   buffers.inWidth = WIDTH;
   buffers.inHeight = HEIGHT;
 
   buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
-                 {inputBuf2.ref(), inputBuf2Staging.ref()}}};
+                 {inputBuf2.ref(), inputBuf2Staging.ref()},
+                 {inputBuf3.ref(), inputBuf3Staging.ref()}}};
   buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
 
   // Copy data to staging buffers
-  std::vector<float> input1(WIDTH * HEIGHT, 1);
+  std::vector<float> input1(WIDTH * HEIGHT, 3);
   std::vector<float> input2(WIDTH * HEIGHT, 2);
+  std::vector<float> input3(WIDTH * HEIGHT, 1);
 
   cm.copyToStagingBuffer<float>(input1, buffers.in[0].staging);
   cm.copyToStagingBuffer<float>(input2, buffers.in[1].staging);
+  cm.copyToStagingBuffer<float>(input3, buffers.in[2].staging);
 
   /* Create shader */
-  vcm::ShaderExecutor<2, PushConstantData> shader("shaders/add2D.spv", cm,
+  vcm::ShaderExecutor<3, PushConstantData> shader("shaders/fma2D.spv", cm,
                                                   buffers);
 
   auto &commandBuffer = cm.commandBuffer;
@@ -78,9 +85,8 @@ int main() {
   std::vector<float> outputData(WIDTH * HEIGHT);
   cm.copyFromStagingBuffer<float>(buffers.out.staging, outputData);
 
-  // Verify that each element in the output matrix is 3.0f
   {
-    bool isCorrect = verifyOutput(outputData, 3.0F);
+    bool isCorrect = verifyOutput(outputData, 7.0F);
     if (isCorrect) {
       fmt::println("The output is correct!");
     } else {
@@ -92,13 +98,13 @@ int main() {
   {
     vcm::TimeIt<true> timeit("CPU version");
     for (int i = 0; i < WIDTH * HEIGHT; ++i) {
-      outputCPU[i] = input1[i] + input2[i];
+      outputCPU[i] = std::fmaf(input1[i], input2[i], input3[i]);
     }
   }
 
   // Verify results
   {
-    bool isCorrect = verifyOutput(outputCPU, 3.0F);
+    bool isCorrect = verifyOutput(outputCPU, 7.0F);
     if (isCorrect) {
       fmt::println("The output is correct!");
     } else {
