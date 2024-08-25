@@ -23,10 +23,6 @@ void main() {
     uint index = y * pushConstants.width + x;
 
     if (x < pushConstants.width && y < pushConstants.height) {
-        // result[index] = image1[index] + image2[index];
-        float v1 = image1[index];
-        float v2 = image2[index];
-
-        result[index] = v1 + v2;
+        result[index] = image1[index] + image2[index];
     }
 }

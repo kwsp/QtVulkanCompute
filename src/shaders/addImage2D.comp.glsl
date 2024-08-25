@@ -17,9 +17,9 @@ void main() {
     if (coords.x < pushConstants.width && coords.y < pushConstants.height) {
         // float value1 = imageLoad(image1, coords).r;
         // float value2 = imageLoad(image2, coords).r;
-        float value1 = 1;
-        float value2 = 1;
-        imageStore(resultImage, coords, vec4(value1 + value2, 0.0, 0.0, 1.0));
+        // imageStore(resultImage, coords, vec4(value1 + value2, 0.0, 0.0, 1.0));
+
+        imageStore(resultImage, coords, vec4(2.0, 0.0, 0.0, 1.0));
     }
 }
 

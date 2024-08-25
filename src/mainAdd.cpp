@@ -256,64 +256,41 @@ int main() {
   vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
 
   {
-    using vk::BufferUsageFlagBits::eStorageBuffer;
-    using vk::BufferUsageFlagBits::eTransferDst;
-    using vk::BufferUsageFlagBits::eTransferSrc;
-    using vk::MemoryPropertyFlagBits::eDeviceLocal;
-    using vk::MemoryPropertyFlagBits::eHostCoherent;
-    using vk::MemoryPropertyFlagBits::eHostVisible;
+    buffers.stagingBuffer1 = cm.createStagingBufferSrc(bufferSize);
+    buffers.buffer1 = cm.createDeviceBufferDst(bufferSize);
 
-    buffers.stagingBuffer1 =
-        cm.createBuffer(bufferSize, eTransferSrc, eHostVisible | eHostCoherent);
-    buffers.buffer1 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferDst,
-                                      eDeviceLocal);
+    buffers.stagingBuffer2 = cm.createStagingBufferSrc(bufferSize);
+    buffers.buffer2 = cm.createDeviceBufferDst(bufferSize);
 
-    buffers.stagingBuffer2 =
-        cm.createBuffer(bufferSize, eTransferSrc, eHostVisible | eHostCoherent);
-    buffers.buffer2 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferDst,
-                                      eDeviceLocal);
-
-    buffers.stagingBuffer3 =
-        cm.createBuffer(bufferSize, eTransferDst, eHostVisible | eHostCoherent);
-    buffers.buffer3 = cm.createBuffer(bufferSize, eStorageBuffer | eTransferSrc,
-                                      eDeviceLocal);
+    buffers.stagingBuffer3 = cm.createStagingBufferDst(bufferSize);
+    buffers.buffer3 = cm.createDeviceBufferSrc(bufferSize);
   }
 
   // descriptorset layout bindings
   {
-    std::array<vk::DescriptorSetLayoutBinding, 3> descriptorSetLayoutBindings{};
+    const auto makeComputeDescriptorSetLayoutBinding = [](int binding) {
+      vk::DescriptorSetLayoutBinding descriptorSetLayoutBinding;
+      descriptorSetLayoutBinding.binding = binding;
+      descriptorSetLayoutBinding.descriptorType =
+          vk::DescriptorType::eStorageBuffer;
+      descriptorSetLayoutBinding.descriptorCount = 1;
+      descriptorSetLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
+      return descriptorSetLayoutBinding;
+    };
 
-    descriptorSetLayoutBindings[0].binding = 0;
-    descriptorSetLayoutBindings[0].descriptorType =
-        vk::DescriptorType::eStorageBuffer;
-    descriptorSetLayoutBindings[0].descriptorCount = 1;
-
-    descriptorSetLayoutBindings[0].stageFlags =
-        vk::ShaderStageFlagBits::eCompute;
-
-    descriptorSetLayoutBindings[1].binding = 1;
-    descriptorSetLayoutBindings[1].descriptorType =
-        vk::DescriptorType::eStorageBuffer;
-    descriptorSetLayoutBindings[1].descriptorCount = 1;
-    descriptorSetLayoutBindings[1].stageFlags =
-        vk::ShaderStageFlagBits::eCompute;
-
-    descriptorSetLayoutBindings[2].binding = 2;
-    descriptorSetLayoutBindings[2].descriptorType =
-        vk::DescriptorType::eStorageBuffer;
-    descriptorSetLayoutBindings[2].descriptorCount = 1;
-    descriptorSetLayoutBindings[2].stageFlags =
-        vk::ShaderStageFlagBits::eCompute;
+    std::array<vk::DescriptorSetLayoutBinding, 3> descriptorSetLayoutBindings{{
+        makeComputeDescriptorSetLayoutBinding(0),
+        makeComputeDescriptorSetLayoutBinding(1),
+        makeComputeDescriptorSetLayoutBinding(2),
+    }};
 
     // Descriptor set layout
-    vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
-    descriptorSetLayoutCreateInfo.bindingCount =
-        descriptorSetLayoutBindings.size();
-    descriptorSetLayoutCreateInfo.pBindings =
-        descriptorSetLayoutBindings.data();
+    vk::DescriptorSetLayoutCreateInfo createInfo{};
+    createInfo.bindingCount = descriptorSetLayoutBindings.size();
+    createInfo.pBindings = descriptorSetLayoutBindings.data();
 
-    resources.descriptorSetLayout = cm.device->createDescriptorSetLayoutUnique(
-        descriptorSetLayoutCreateInfo);
+    resources.descriptorSetLayout =
+        cm.device->createDescriptorSetLayoutUnique(createInfo);
   }
 
   createDescriptorPoolAndSet(cm, resources, buffers);

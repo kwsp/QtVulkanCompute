@@ -38,6 +38,31 @@ public:
   createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
                vk::MemoryPropertyFlags properties) const;
 
+  [[nodiscard]] VulkanBuffer createStagingBufferSrc(vk::DeviceSize size) const {
+    return createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
+                        vk::MemoryPropertyFlagBits::eHostVisible |
+                            vk::MemoryPropertyFlagBits::eHostCoherent);
+  }
+  [[nodiscard]] VulkanBuffer createStagingBufferDst(vk::DeviceSize size) const {
+    return createBuffer(size, vk::BufferUsageFlagBits::eTransferDst,
+                        vk::MemoryPropertyFlagBits::eHostVisible |
+                            vk::MemoryPropertyFlagBits::eHostCoherent);
+  }
+
+  [[nodiscard]] VulkanBuffer createDeviceBufferSrc(vk::DeviceSize size) const {
+    return createBuffer(size,
+                        vk::BufferUsageFlagBits::eTransferSrc |
+                            vk::BufferUsageFlagBits::eStorageBuffer,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+  }
+
+  [[nodiscard]] VulkanBuffer createDeviceBufferDst(vk::DeviceSize size) const {
+    return createBuffer(size,
+                        vk::BufferUsageFlagBits::eTransferDst |
+                            vk::BufferUsageFlagBits::eStorageBuffer,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal);
+  }
+
   [[nodiscard]] VulkanImage createImage2D(uint32_t width, uint32_t height,
                                           vk::Format format,
                                           vk::ImageUsageFlags usage) const;
