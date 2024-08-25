@@ -227,7 +227,12 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
 
 template <int NInputBuf> class ShaderExecutor {
 public:
-  ShaderExecutor(vcm::VulkanComputeManager &cm) { createDescriptorSet(cm); }
+  ShaderExecutor(vcm::VulkanComputeManager &cm,
+                 ComputeShaderBuffers<NInputBuf> buffers) {
+
+    createDescriptorSet(cm);
+    createDescriptorPoolAndSet(cm, resources, buffers);
+  }
 
   // private:
   ComputeShaderResources resources{};
@@ -267,8 +272,6 @@ int main() {
 
   vcm::VulkanComputeManager cm;
 
-  ShaderExecutor<2> shader(cm);
-
   /*
   Create buffers
   */
@@ -288,7 +291,7 @@ int main() {
                  {inputBuf2.ref(), inputBuf2Staging.ref()}}};
   buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
 
-  createDescriptorPoolAndSet(cm, shader.resources, buffers);
+  ShaderExecutor<2> shader(cm, buffers);
 
   createComputePipeline(cm, shader.resources);
 
