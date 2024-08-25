@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Common.hpp"
+#include <filesystem>
 #include <fmt/format.h>
 #include <optional>
 #include <span>
@@ -9,16 +11,6 @@
 #include <vulkan/vulkan.hpp>
 
 namespace vcm {
-
-struct VulkanBuffer {
-  vk::UniqueBuffer buffer;
-  vk::UniqueDeviceMemory memory;
-};
-
-struct VulkanImage {
-  vk::UniqueImage image;
-  vk::UniqueDeviceMemory memory;
-};
 
 class VulkanComputeManager {
 public:
@@ -105,6 +97,11 @@ public:
                            VulkanBuffer &stagingBuffer) const {
     copyToStagingBuffer(data, stagingBuffer.memory.get());
   }
+  template <typename T>
+  void copyToStagingBuffer(std::span<const T> data,
+                           VulkanBufferRef &stagingBuffer) const {
+    copyToStagingBuffer(data, stagingBuffer.memory);
+  }
 
   template <typename T>
   void copyFromStagingBuffer(vk::DeviceMemory memory, std::span<T> data) const {
@@ -119,6 +116,11 @@ public:
   void copyFromStagingBuffer(const VulkanBuffer &stagingBuffer,
                              std::span<T> data) const {
     copyFromStagingBuffer<T>(stagingBuffer.memory.get(), data);
+  }
+  template <typename T>
+  void copyFromStagingBuffer(const VulkanBufferRef &stagingBuffer,
+                             std::span<T> data) const {
+    copyFromStagingBuffer<T>(stagingBuffer.memory, data);
   }
 
   // private:
@@ -214,12 +216,44 @@ public:
   findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
   /* Load shaders */
-  vk::UniqueShaderModule loadShader(const char *filename) const;
+  [[nodiscard]] vk::UniqueShaderModule
+  loadShader(const fs::path &filename) const;
   [[nodiscard]] vk::UniqueShaderModule
   createShaderModule(const std::vector<char> &computeShaderCode) const;
 
   /* Cleanup */
   void cleanup();
 };
+
+// Insert a memory barrier to wait for transfer to complete before starting
+// compute shader
+inline void memoryBarrierTransferThenCompute(vk::CommandBuffer &commandBuffer) {
+  vk::MemoryBarrier memoryBarrier{};
+  memoryBarrier.srcAccessMask =
+      vk::AccessFlagBits::eTransferWrite; // After copying
+  memoryBarrier.dstAccessMask =
+      vk::AccessFlagBits::eShaderRead; // Before compute shader reads
+
+  commandBuffer.pipelineBarrier(
+      vk::PipelineStageFlagBits::eTransfer,      // src: after the transfer op
+      vk::PipelineStageFlagBits::eComputeShader, // dst: before the compute
+                                                 // shader
+      {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+}
+
+// Insert a memory barrier to wait for compute shader to complete before
+// transfering memory
+inline void memoryBarrierComputeThenTransfer(vk::CommandBuffer &commandBuffer) {
+  vk::MemoryBarrier memoryBarrier{};
+  memoryBarrier.srcAccessMask =
+      vk::AccessFlagBits::eShaderWrite; // After compute shader writes
+  memoryBarrier.dstAccessMask =
+      vk::AccessFlagBits::eTransferRead; // Before transfer reads
+
+  commandBuffer.pipelineBarrier(
+      vk::PipelineStageFlagBits::eComputeShader, // src: after compute
+      vk::PipelineStageFlagBits::eTransfer,      // dst: before next transfer
+      {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+}
 
 } // namespace vcm

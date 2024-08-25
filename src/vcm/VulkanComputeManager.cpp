@@ -1,4 +1,5 @@
 #include "VulkanComputeManager.hpp"
+#include "Common.hpp"
 #include <armadillo>
 #include <array>
 #include <fmt/format.h>
@@ -143,7 +144,7 @@ VulkanComputeManager::createImage2D(uint32_t width, uint32_t height,
   imageInfo.arrayLayers = 1;
   imageInfo.format = format;
   imageInfo.tiling = vk::ImageTiling::eOptimal;
-  imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+  imageInfo.initialLayout = vk::ImageLayout::eGeneral;
   imageInfo.usage = usage;
   imageInfo.sharingMode = vk::SharingMode::eExclusive;
   imageInfo.samples = vk::SampleCountFlagBits::e1;
@@ -391,8 +392,15 @@ void VulkanComputeManager::createLogicalDevice() {
   const auto indices = findQueueFamilies(physicalDevice);
 
   vk::DeviceQueueCreateInfo queueCreateInfo{};
-  queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
-  queueCreateInfo.queueCount = 1;
+  if (indices.computeFamily.has_value()) {
+    queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
+    queueCreateInfo.queueCount = 1;
+  } else {
+    const auto msg =
+        fmt::format("Compute queue not supported on physical device {}",
+                    physicalDeviceName);
+    throw std::runtime_error(msg);
+  }
 
   float queuePriority = 1.0F;
   queueCreateInfo.pQueuePriorities = &queuePriority;
@@ -418,7 +426,7 @@ void VulkanComputeManager::createLogicalDevice() {
   fmt::println("Created Vulkan logical device and compute queue.");
 }
 
-auto readFile(const char *filename) {
+auto readFile(const fs::path &filename) {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open shader file");
@@ -443,9 +451,9 @@ vk::UniqueShaderModule VulkanComputeManager::createShaderModule(
 }
 
 vk::UniqueShaderModule
-VulkanComputeManager::loadShader(const char *filename) const {
+VulkanComputeManager::loadShader(const fs::path &filename) const {
   auto computeShaderModule = createShaderModule(readFile(filename));
-  fmt::print("Successfully loaded shader {}.\n", filename);
+  fmt::print("Successfully loaded shader {}.\n", filename.string());
   return computeShaderModule;
 
   /*

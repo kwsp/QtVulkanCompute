@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace uspam {
+namespace vcm {
 /**
 Use RAII to time a code block.
 Example:
@@ -115,4 +115,4 @@ auto bench(const std::string &name, const int runs, const Func &func,
 
   return nanos;
 }
-} // namespace uspam
+} // namespace vcm
