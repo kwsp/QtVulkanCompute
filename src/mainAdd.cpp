@@ -239,7 +239,7 @@ private:
 
       // NOLINTBEGIN(*-constant-array-index)
       for (int i = 0; i < NInputBuf; ++i) {
-        bufferInfo[i].buffer = buffers.in[0].buffer.buffer;
+        bufferInfo[i].buffer = buffers.in[i].buffer.buffer;
         bufferInfo[i].offset = 0;
         bufferInfo[i].range = VK_WHOLE_SIZE;
 
