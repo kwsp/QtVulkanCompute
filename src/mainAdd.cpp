@@ -44,28 +44,6 @@ struct PushConstantData {
   int height;
 };
 
-// Bind command buffer to pipeline
-// Bind command buffer to descriptor set
-// Dispatch command buffer
-void dispatchComputeShader(vcm::VulkanComputeManager &cm,
-                           ComputeShaderResources &resources, int inputWidth,
-                           int inputHeight) {
-  cm.commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute,
-                                resources.pipeline.get());
-
-  cm.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                                      resources.pipelineLayout.get(), 0,
-                                      resources.descriptorSet.get(), {});
-
-  PushConstantData pushConstantData{inputWidth, inputHeight};
-
-  cm.commandBuffer.pushConstants(resources.pipelineLayout.get(),
-                                 vk::ShaderStageFlagBits::eCompute, 0,
-                                 sizeof(PushConstantData), &pushConstantData);
-
-  cm.commandBuffer.dispatch((inputWidth + 15) / 16, (inputHeight + 15) / 16, 1);
-}
-
 bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   for (size_t i = 0; i < outputData.size(); ++i) {
     if (outputData[i] != expectedValue) {
@@ -127,7 +105,7 @@ public:
           {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
     }
 
-    dispatchComputeShader(cm, resources, buffers.inWidth, buffers.inHeight);
+    dispatchComputeShader(cm, buffers.inWidth, buffers.inHeight);
 
     {
       // (Optional) Step 4: Insert another pipeline barrier if needed
@@ -269,6 +247,28 @@ private:
     }
 
     resources.pipeline = std::move(pipelineResult.value);
+  }
+
+  // Bind command buffer to pipeline
+  // Bind command buffer to descriptor set
+  // Dispatch command buffer
+  void dispatchComputeShader(vcm::VulkanComputeManager &cm, int inputWidth,
+                             int inputHeight) {
+    cm.commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute,
+                                  resources.pipeline.get());
+
+    cm.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                                        resources.pipelineLayout.get(), 0,
+                                        resources.descriptorSet.get(), {});
+
+    PushConstantData pushConstantData{inputWidth, inputHeight};
+
+    cm.commandBuffer.pushConstants(resources.pipelineLayout.get(),
+                                   vk::ShaderStageFlagBits::eCompute, 0,
+                                   sizeof(PushConstantData), &pushConstantData);
+
+    cm.commandBuffer.dispatch((inputWidth + 15) / 16, (inputHeight + 15) / 16,
+                              1);
   }
 };
 
