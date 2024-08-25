@@ -144,10 +144,10 @@ public:
     // // Copy data from staging to host buffers
     {
       // Async copy with barrier
-      cm.copyBuffer(buffers.in[0].staging.buffer, buffers.in[0].buffer.buffer,
-                    buffers.bufferSize(), commandBuffer);
-      cm.copyBuffer(buffers.in[1].staging.buffer, buffers.in[1].buffer.buffer,
-                    buffers.bufferSize(), commandBuffer);
+      for (int i = 0; i < NInputBuf; ++i) {
+        cm.copyBuffer(buffers.in[i].staging.buffer, buffers.in[i].buffer.buffer,
+                      buffers.bufferSize(), commandBuffer);
+      }
 
       vk::MemoryBarrier memoryBarrier{};
       memoryBarrier.srcAccessMask =
