@@ -562,7 +562,7 @@ void VulkanComputeManager::copyImageToBuffer(
   barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
   barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
 
-  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+  commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
                                 vk::PipelineStageFlagBits::eTransfer,
                                 vk::DependencyFlags(), nullptr, nullptr,
                                 barrier);
@@ -591,7 +591,7 @@ void VulkanComputeManager::copyImageToBuffer(
   barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
   commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                vk::PipelineStageFlagBits::eFragmentShader,
+                                vk::PipelineStageFlagBits::eComputeShader,
                                 vk::DependencyFlags(), nullptr, nullptr,
                                 barrier);
 

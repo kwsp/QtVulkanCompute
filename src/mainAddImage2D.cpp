@@ -277,7 +277,7 @@ int main() {
 
     buffers.stagingBuffer3 =
         cm.createBuffer(bufferSize, eTransferDst, eHostVisible | eHostCoherent);
-    buffers.image2 = cm.createImage2D(WIDTH, HEIGHT, vk::Format::eR32Sfloat,
+    buffers.image3 = cm.createImage2D(WIDTH, HEIGHT, vk::Format::eR32Sfloat,
                                       vk::ImageUsageFlagBits::eTransferSrc |
                                           vk::ImageUsageFlagBits::eStorage);
   }
