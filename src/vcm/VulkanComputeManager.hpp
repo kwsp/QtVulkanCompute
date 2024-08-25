@@ -6,94 +6,84 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 namespace vcm {
 
 struct VulkanBuffer {
-  VkBuffer buffer;
-  VkDeviceMemory memory;
+  vk::UniqueBuffer buffer;
+  vk::UniqueDeviceMemory memory;
 };
 
 class VulkanComputeManager {
 public:
   VulkanComputeManager();
 
-  VulkanComputeManager(const VulkanComputeManager &) = default;
+  VulkanComputeManager(const VulkanComputeManager &) = delete;
   VulkanComputeManager(VulkanComputeManager &&) = delete;
   VulkanComputeManager &operator=(const VulkanComputeManager &) = delete;
   VulkanComputeManager &operator=(VulkanComputeManager &&) = delete;
 
-  ~VulkanComputeManager() { cleanup(); }
+  ~VulkanComputeManager() = default;
 
-  static auto queryInstanceExtensionSupport()
-      -> std::vector<VkExtensionProperties>;
   static void printInstanceExtensionSupport();
 
   // Create buffer helpers
-  void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                    VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                    VkDeviceMemory &bufferMemory) const;
-  void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                    VkMemoryPropertyFlags properties, VulkanBuffer &buf) const {
+  void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                    vk::MemoryPropertyFlags properties,
+                    vk::UniqueBuffer &buffer,
+                    vk::UniqueDeviceMemory &bufferMemory) const;
+  void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                    vk::MemoryPropertyFlags properties,
+                    VulkanBuffer &buf) const {
     createBuffer(size, usage, properties, buf.buffer, buf.memory);
   }
   [[nodiscard]] VulkanBuffer
-  createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-               VkMemoryPropertyFlags properties) const {
+  createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+               vk::MemoryPropertyFlags properties) const {
     VulkanBuffer buf{};
     createBuffer(size, usage, properties, buf.buffer, buf.memory);
     return buf;
   }
 
-  // Destroy buffer helpers
-  void destroyBuffer(VkBuffer &buffer, VkDeviceMemory &memory) const {
-    vkDestroyBuffer(device, buffer, nullptr);
-    vkFreeMemory(device, memory, nullptr);
-  }
-  void destroyBuffer(VulkanBuffer &buffer) const {
-    destroyBuffer(buffer.buffer, buffer.memory);
-  }
-
   // If commandBuffer is provided, use it and only record
   // else allocate a temporary command buffer
-  void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
-                  VkCommandBuffer commandBuffer = VK_NULL_HANDLE) const;
+  void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer,
+                  vk::DeviceSize size,
+                  vk::CommandBuffer commandBuffer = nullptr) const;
 
   struct CopyBufferT {
-    VkBuffer src;
-    VkBuffer dst;
-    VkDeviceSize size;
+    vk::Buffer src;
+    vk::Buffer dst;
+    vk::DeviceSize size;
   };
   void copyBuffers(std::span<CopyBufferT> buffersToCopy) const;
 
   // private:
   // QVulkanInstance vulkanInstance;
-  VkInstance instance{};
+  vk::UniqueInstance instance;
 
   // Physical device
-  VkPhysicalDevice physicalDevice{};
+  vk::PhysicalDevice physicalDevice;
   std::string physicalDeviceName;
 
   // Logical device
-  VkDevice device{};
+  vk::UniqueDevice device;
   // Compute queue
-  VkQueue queue{};
+  vk::Queue queue;
 
   // Command pool
   // Manage the memory that is used to store the buffers and command buffers are
   // allocated from them
   // Command pool should be thread local
-  VkCommandPool commandPool;
+  vk::UniqueCommandPool commandPool;
 
   // Command buffer
-  // Command buffers will be automatically freed when the command pool is
-  // destroyed, so we don't need to explicitly cleanup.
-  VkCommandBuffer commandBuffer;
+  vk::CommandBuffer commandBuffer;
 
   // Descriptor pool
   // Discriptor sets for buffers are allocated from this
-  VkDescriptorPool descriptorPool;
+  vk::DescriptorPool descriptorPool;
 
   static constexpr std::array<const char *, 1> validationLayers = {
       {"VK_LAYER_KHRONOS_validation"}};
@@ -106,18 +96,18 @@ public:
 
   /* Create Instance */
   void createInstance();
-  bool checkValidationLayerSupport();
+  static bool checkValidationLayerSupport();
 
   /* Find physical device */
   // Select a graphics card in the system that supports the features we need.
   // Stick to the first suitable card we find.
   void pickPhysicalDevice();
-  static int rateDeviceSuitability(VkPhysicalDevice device);
+  static int rateDeviceSuitability(vk::PhysicalDevice device);
   struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> computeFamily;
   };
-  static QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+  static QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
 
   /* Create logical device */
   void createLogicalDevice();
@@ -127,20 +117,20 @@ public:
 
   /* Create command buffer */
   void createCommandBuffer();
-  void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+  void recordCommandBuffer(vk::CommandBuffer commandBuffer,
+                           uint32_t imageIndex);
 
   /* Create descriptor pool */
   void createDescriptorPool();
 
   /* Create buffers */
-  [[nodiscard]] uint32_t findMemoryType(uint32_t typeFilter,
-                                        VkMemoryPropertyFlags properties) const;
+  [[nodiscard]] uint32_t
+  findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
   /* Load shaders */
-  VkShaderModule loadShader(const char *filename) const;
-  [[nodiscard]] VkShaderModule
+  vk::UniqueShaderModule loadShader(const char *filename) const;
+  [[nodiscard]] vk::UniqueShaderModule
   createShaderModule(const std::vector<char> &computeShaderCode) const;
-  void destroyShaderModule(VkShaderModule module) const;
 
   /* Cleanup */
   void cleanup();

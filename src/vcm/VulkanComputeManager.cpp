@@ -1,19 +1,18 @@
 #include "VulkanComputeManager.hpp"
-#include "vulkan/vulkan_core.h"
+#include "vulkan/vulkan_enums.hpp"
+#include "vulkan/vulkan_structs.hpp"
 #include <armadillo>
 #include <array>
 #include <fmt/format.h>
 #include <fstream>
+#include <ios>
 #include <map>
 #include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-#define BAIL_ON_BAD_RESULT(result)                                             \
-  if (VK_SUCCESS != (result)) {                                                \
-    fprintf(stderr, "Failure at %u %s\n", __LINE__, __FILE__);                 \
-    exit(-1);                                                                  \
-  }
+// NOLINTBEGIN(*-reinterpret-cast)
 
 namespace vcm {
 
@@ -31,31 +30,6 @@ VulkanComputeManager::VulkanComputeManager() {
 
   createCommandBuffer();
 
-#ifndef NDEBUG
-  // Check device memory property
-  {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-    // Enumerate memory types
-    std::cout << "Memory Type Count: " << memProperties.memoryTypeCount
-              << std::endl;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-      const auto propFlags = memProperties.memoryTypes[i].propertyFlags;
-      std::cout << "-- Memory Type " << i << ": Property Flags = " << propFlags
-                << std::endl;
-
-      if (!(propFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-        std::cout << "--   Warning: Memory Type " << i
-                  << " does not have "
-                     "VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT"
-                  << std::endl;
-      }
-    }
-  }
-#endif
-
-  // Create descriptor pool
   createDescriptorPool();
 
   // loadComputeShader("shaders/warpPolarCompute.spv");
@@ -64,9 +38,8 @@ VulkanComputeManager::VulkanComputeManager() {
 void VulkanComputeManager::createCommandPool() {
   QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
-  VkCommandPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-  poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  vk::CommandPoolCreateInfo poolInfo{};
+  poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
   poolInfo.queueFamilyIndex = queueFamilyIndices.computeFamily.value();
 
   // There are 2 possible flags for command pools
@@ -83,108 +56,82 @@ void VulkanComputeManager::createCommandPool() {
   // Command buffers are executed by submitting them on one of the device queues
   // Each command pool can only allocate command buffers that are submitted on a
   // single type of queue.
-
-  if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to create command pool!");
-  }
+  commandPool = device->createCommandPoolUnique(poolInfo);
 }
 
 void VulkanComputeManager::createCommandBuffer() {
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.commandPool = commandPool;
+  vk::CommandBufferAllocateInfo allocInfo{};
+  allocInfo.commandPool = *commandPool;
   // VK_COMMAND_BUFFER_LEVEL_PRIMARY: can be submitted to a queue for execution,
   // but cannot be called from other command buffers.
   // VK_COMMAND_BUFFER_LEVEL_SECONDARY: cannot be submitted directly, but can be
   // called from primary command buffers.
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.level = vk::CommandBufferLevel::ePrimary;
   allocInfo.commandBufferCount = 1;
 
-  if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to allocate command buffers!");
-  }
+  commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
 }
 
-void VulkanComputeManager::recordCommandBuffer(VkCommandBuffer commandBuffer,
+void VulkanComputeManager::recordCommandBuffer(vk::CommandBuffer commandBuffer,
                                                uint32_t imageIndex) {
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  vk::CommandBufferBeginInfo beginInfo{};
   // VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: rerecorded right after
   // executing it once. VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT:
   // secondary command buffer that will be entirely within a single render pass
   // VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: can be resubmitted while it
   // is also already pending execution.
   // Non are applicable right now.
-  beginInfo.flags = 0;
-  beginInfo.pInheritanceInfo = nullptr;
-
-  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-    throw std::runtime_error("Failed to begin recording command buffer!");
-  }
+  beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+  commandBuffer.begin(beginInfo);
 }
 
 void VulkanComputeManager::createDescriptorPool() {
   // Create descriptor pool
   // describe which descriptor types our descriptor sets are going to contain
   // and how many
-  std::array<VkDescriptorPoolSize, 2> poolSize;
-  poolSize[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  poolSize[0].descriptorCount = 20;
-  poolSize[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSize[1].descriptorCount = 10;
+  std::array<vk::DescriptorPoolSize, 2> poolSize{{
+      {vk::DescriptorType::eStorageBuffer, 20},
+      {vk::DescriptorType::eUniformBuffer, 10},
+  }};
 
-  VkDescriptorPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  vk::DescriptorPoolCreateInfo poolInfo{};
   poolInfo.maxSets = 20;
-  poolInfo.poolSizeCount = poolSize.size();
+  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSize.size());
   poolInfo.pPoolSizes = poolSize.data();
-  poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
 
-  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to create descriptor pool!");
-  }
+  descriptorPool = device->createDescriptorPool(poolInfo);
 }
 
-void VulkanComputeManager::createBuffer(VkDeviceSize size,
-                                        VkBufferUsageFlags usage,
-                                        VkMemoryPropertyFlags properties,
-                                        VkBuffer &buffer,
-                                        VkDeviceMemory &bufferMemory) const {
-  VkBufferCreateInfo bufferInfo{};
-  bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+void VulkanComputeManager::createBuffer(
+    vk::DeviceSize size, vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags properties, vk::UniqueBuffer &buffer,
+    vk::UniqueDeviceMemory &bufferMemory) const {
+  vk::BufferCreateInfo bufferInfo{};
   bufferInfo.size = size;
   bufferInfo.usage = usage;
-  bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  bufferInfo.sharingMode = vk::SharingMode::eExclusive;
 
-  if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create buffer!");
-  }
+  buffer = device->createBufferUnique(bufferInfo);
 
   // To allocate memory for a buffer we need to first query its memory
   // requirements using vkGetBufferMemoryRequirements
-  VkMemoryRequirements memRequirements;
-  vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+  vk::MemoryRequirements memRequirements =
+      device->getBufferMemoryRequirements(*buffer);
 
-  VkMemoryAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  vk::MemoryAllocateInfo allocInfo{};
   allocInfo.allocationSize = memRequirements.size;
   allocInfo.memoryTypeIndex =
       findMemoryType(memRequirements.memoryTypeBits, properties);
 
-  if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate buffer memory!");
-  }
+  bufferMemory = device->allocateMemoryUnique(allocInfo);
 
-  vkBindBufferMemory(device, buffer, bufferMemory, 0);
+  device->bindBufferMemory(*buffer, *bufferMemory, 0);
 }
 
-void VulkanComputeManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
-                                      VkDeviceSize size,
-                                      VkCommandBuffer commandBuffer) const {
+void VulkanComputeManager::copyBuffer(vk::Buffer srcBuffer,
+                                      vk::Buffer dstBuffer, vk::DeviceSize size,
+                                      vk::CommandBuffer commandBuffer) const {
   // Memory transfer ops are executed using command buffers.
   // We must first allocate a temporary command buffer.
   // We can create a short-lived command pool for this because the
@@ -192,43 +139,35 @@ void VulkanComputeManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer,
   // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
   // pool creation
 
-  const bool allocTempCommandBuffer = commandBuffer == VK_NULL_HANDLE;
+  const bool allocTempCommandBuffer = !commandBuffer;
 
   if (allocTempCommandBuffer) {
-
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
+    vk::CommandBufferAllocateInfo allocInfo{};
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandPool = *commandPool;
     allocInfo.commandBufferCount = 1;
 
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+    commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
 
     // Immediately start recording the command buffer
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vk::CommandBufferBeginInfo beginInfo{};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    commandBuffer.begin(beginInfo);
   }
 
-  VkBufferCopy copyRegion{};
-  copyRegion.srcOffset = 0; // Optional
-  copyRegion.dstOffset = 0; // Optional
+  vk::BufferCopy copyRegion{};
   copyRegion.size = size;
-  vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+  commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
 
   if (allocTempCommandBuffer) {
-    vkEndCommandBuffer(commandBuffer);
+    commandBuffer.end();
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    vk::SubmitInfo submitInfo{};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(queue);
-
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+    queue.submit(submitInfo);
+    queue.waitIdle();
   }
 }
 
@@ -241,51 +180,44 @@ void VulkanComputeManager::copyBuffers(
   // (should set VK_COMMAND_POOL_CREATE_TRANSIENT_BIT) flag during command
   // pool creation
 
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandPool = commandPool;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  vk::CommandBufferAllocateInfo allocInfo{};
+  allocInfo.level = vk::CommandBufferLevel::ePrimary;
+  allocInfo.commandPool = *commandPool;
   allocInfo.commandBufferCount = 1;
 
-  VkCommandBuffer commandBuffer; // NOLINT
-  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+  vk::CommandBuffer commandBuffer =
+      device->allocateCommandBuffers(allocInfo)[0];
 
   // Immediately start recording the command buffer
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vk::CommandBufferBeginInfo beginInfo{};
+  beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
-  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+  commandBuffer.begin(beginInfo);
 
   for (const auto &buffers : buffersToCopy) {
-    VkBufferCopy copyRegion{};
+    vk::BufferCopy copyRegion{};
     copyRegion.srcOffset = 0; // Optional
     copyRegion.dstOffset = 0; // Optional
     copyRegion.size = buffers.size;
-    vkCmdCopyBuffer(commandBuffer, buffers.src, buffers.dst, 1, &copyRegion);
+    commandBuffer.copyBuffer(buffers.src, buffers.dst, copyRegion);
   }
 
   vkEndCommandBuffer(commandBuffer);
 
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  vk::SubmitInfo submitInfo{};
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &commandBuffer;
-  vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(queue);
-
-  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+  queue.submit(submitInfo);
+  queue.waitIdle();
 }
 
 uint32_t
 VulkanComputeManager::findMemoryType(uint32_t typeFilter,
-                                     VkMemoryPropertyFlags properties) const {
+                                     vk::MemoryPropertyFlags properties) const {
 
   // First query info about available types of memory using
-  // vkGetPhysicalDeviceMemoryProperties
-  VkPhysicalDeviceMemoryProperties memProperties;
-  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+  vk::PhysicalDeviceMemoryProperties memProperties =
+      physicalDevice.getMemoryProperties();
 
   // VkPhysicalDeviceMemoryProperties has 2 arrays: memoryTypes and
   // memoryHeaps Memory heaps are distinct memory resources like dedicated
@@ -294,6 +226,7 @@ VulkanComputeManager::findMemoryType(uint32_t typeFilter,
   // Right now we're only concerned with the type of memory and not the heap
   // it comes from right now
   for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+    // NOLINTNEXTLINE(*-implicit-bool-conversion)
     if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags &
                                     properties) == properties) {
       return i;
@@ -303,16 +236,14 @@ VulkanComputeManager::findMemoryType(uint32_t typeFilter,
 }
 
 void VulkanComputeManager::createInstance() {
-  VkApplicationInfo appInfo{};
-  appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+  vk::ApplicationInfo appInfo{};
   appInfo.pApplicationName = "QtVulkanCompute";
   appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
   appInfo.pEngineName = "No Engine";
   appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   appInfo.apiVersion = VK_API_VERSION_1_1;
 
-  VkInstanceCreateInfo createInfo{};
-  createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+  vk::InstanceCreateInfo createInfo{};
   createInfo.pApplicationInfo = &appInfo;
 
   // Enable validation layers in debug
@@ -332,28 +263,19 @@ void VulkanComputeManager::createInstance() {
   fmt::println("On macOS with molten-vk, enable "
                "VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME");
   instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-  createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+  createInfo.flags |= vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 #endif
 
   createInfo.enabledExtensionCount =
       static_cast<uint32_t>(instanceExtensions.size());
   createInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
-  const auto ret = vkCreateInstance(&createInfo, nullptr, &instance);
-  if (ret != VK_SUCCESS) {
-    fmt::println("Failed to create Vulkan instance! Code: {}",
-                 static_cast<int32_t>(ret));
-    throw std::runtime_error("Failed to create Vulkan instance!");
-  }
+  instance = vk::createInstanceUnique(createInfo);
   fmt::println("Created Vulkan instance.");
 }
 
 bool VulkanComputeManager::checkValidationLayerSupport() {
-  uint32_t layerCount{};
-  vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-  std::vector<VkLayerProperties> availableLayers(layerCount);
-  vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+  auto availableLayers = vk::enumerateInstanceLayerProperties();
 
   for (const char *layerName : validationLayers) {
     bool layerFound = false;
@@ -368,24 +290,22 @@ bool VulkanComputeManager::checkValidationLayerSupport() {
     }
   }
 
-  return false;
+  return true;
 }
 
-int VulkanComputeManager::rateDeviceSuitability(VkPhysicalDevice device) {
-  VkPhysicalDeviceProperties deviceProperties;
-  VkPhysicalDeviceFeatures deviceFeatures;
-  vkGetPhysicalDeviceProperties(device, &deviceProperties);
-  vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+int VulkanComputeManager::rateDeviceSuitability(vk::PhysicalDevice device) {
+  auto deviceProperties = device.getProperties();
+  auto deviceFeatures = device.getFeatures();
 
   int score = 0;
 
   // Discrete GPUs have a significant performance advantage
-  if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-    score += 1000;
+  if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+    score += 1000; // NOLINT
   }
 
   // Maximum possible size of textures affects graphics quality
-  score += deviceProperties.limits.maxImageDimension2D;
+  score += deviceProperties.limits.maxImageDimension2D; // NOLINT
 
   // Need compute bit
   const auto indices = findQueueFamilies(device);
@@ -400,15 +320,12 @@ void VulkanComputeManager::pickPhysicalDevice() {
   physicalDevice = VK_NULL_HANDLE;
   physicalDeviceName = {};
 
-  uint32_t deviceCount{};
-  vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+  std::vector<vk::PhysicalDevice> devices =
+      instance->enumeratePhysicalDevices();
 
-  if (deviceCount == 0) {
+  if (devices.empty()) {
     throw std::runtime_error("Failed to find GPUs with Vulkan support");
   }
-
-  std::vector<VkPhysicalDevice> devices(deviceCount);
-  vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
   // A sorted associative container to rank candidates by increasing score
   std::multimap<int, VkPhysicalDevice> candidates;
@@ -420,8 +337,7 @@ void VulkanComputeManager::pickPhysicalDevice() {
   if (candidates.rbegin()->first > 0) {
     physicalDevice = candidates.rbegin()->second;
 
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+    auto deviceProperties = physicalDevice.getProperties();
     physicalDeviceName = std::string{deviceProperties.deviceName};
 
   } else {
@@ -432,21 +348,18 @@ void VulkanComputeManager::pickPhysicalDevice() {
 }
 
 VulkanComputeManager::QueueFamilyIndices
-VulkanComputeManager::findQueueFamilies(VkPhysicalDevice device) {
+VulkanComputeManager::findQueueFamilies(vk::PhysicalDevice device) {
   QueueFamilyIndices indices{};
 
-  uint32_t queueFamilyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-  std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                           queueFamilies.data());
+  std::vector<vk::QueueFamilyProperties> queueFamilies =
+      device.getQueueFamilyProperties();
 
   int i = 0;
   for (const auto &queueFamily : queueFamilies) {
-    if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+    if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
       indices.graphicsFamily = i;
     }
-    if (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+    if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute) {
       indices.computeFamily = i;
     }
     i++;
@@ -459,44 +372,30 @@ void VulkanComputeManager::createLogicalDevice() {
   // Specify the queues to be created
   const auto indices = findQueueFamilies(physicalDevice);
 
-  VkDeviceQueueCreateInfo queueCreateInfo{};
-  queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  vk::DeviceQueueCreateInfo queueCreateInfo{};
   queueCreateInfo.queueFamilyIndex = indices.computeFamily.value();
   queueCreateInfo.queueCount = 1;
 
   float queuePriority = 1.0F;
   queueCreateInfo.pQueuePriorities = &queuePriority;
 
-  // Specifiy used device features
-  VkPhysicalDeviceFeatures deviceFeatures{};
+  vk::PhysicalDeviceFeatures deviceFeatures{};
 
-  // Create the logical device
-  VkDeviceCreateInfo createInfo{};
-  createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
-  // Add pointers to the queue creation info and device features structs
-  createInfo.pQueueCreateInfos = &queueCreateInfo;
-  createInfo.queueCreateInfoCount = 1;
-
-  createInfo.pEnabledFeatures = &deviceFeatures;
-
-  // Device extensions used
   std::vector<const char *> deviceExtensions;
 #ifdef __APPLE__
-  {
-    // VK_KHR_portability_subset
-    deviceExtensions.push_back("VK_KHR_portability_subset");
-  }
+  deviceExtensions.push_back("VK_KHR_portability_subset");
 #endif
-  createInfo.enabledExtensionCount = deviceExtensions.size();
+
+  vk::DeviceCreateInfo createInfo{};
+  createInfo.pQueueCreateInfos = &queueCreateInfo;
+  createInfo.queueCreateInfoCount = 1;
+  createInfo.pEnabledFeatures = &deviceFeatures;
+  createInfo.enabledExtensionCount =
+      static_cast<uint32_t>(deviceExtensions.size());
   createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-  if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to create logical device!");
-  }
-
-  vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &queue);
+  device = physicalDevice.createDeviceUnique(createInfo);
+  queue = device->getQueue(indices.computeFamily.value(), 0);
 
   fmt::println("Created Vulkan logical device and compute queue.");
 }
@@ -510,33 +409,24 @@ auto readFile(const char *filename) {
   const size_t fileSize = file.tellg();
   std::vector<char> buffer(fileSize);
   file.seekg(0);
-  file.read(buffer.data(), fileSize);
+  file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
+
   file.close();
   return buffer;
 }
 
-VkShaderModule VulkanComputeManager::createShaderModule(
+vk::UniqueShaderModule VulkanComputeManager::createShaderModule(
     const std::vector<char> &shaderCode) const {
-  VkShaderModuleCreateInfo createInfo{};
-  createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  vk::ShaderModuleCreateInfo createInfo{};
   createInfo.codeSize = shaderCode.size();
   createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
 
-  VkShaderModule shaderModule{};
-  if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("Failed to create shader module!");
-  }
-
-  return shaderModule;
+  return device->createShaderModuleUnique(createInfo);
 }
 
-VkShaderModule VulkanComputeManager::loadShader(const char *filename) const {
-  /*
-   * Create compute pipeline
-   */
-
-  VkShaderModule computeShaderModule = createShaderModule(readFile(filename));
+vk::UniqueShaderModule
+VulkanComputeManager::loadShader(const char *filename) const {
+  auto computeShaderModule = createShaderModule(readFile(filename));
   fmt::print("Successfully loaded shader {}.\n", filename);
   return computeShaderModule;
 
@@ -561,40 +451,14 @@ buffer in our sample).
   */
 }
 
-void VulkanComputeManager::destroyShaderModule(VkShaderModule module) const {
-  vkDestroyShaderModule(device, module, nullptr);
-}
-
-void VulkanComputeManager::cleanup() {
-  // destroy descriptor pool
-  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-
-  vkDestroyCommandPool(device, commandPool, nullptr);
-
-  vkDestroyDevice(device, nullptr);
-
-  vkDestroyInstance(instance, nullptr);
-}
-
-auto VulkanComputeManager::queryInstanceExtensionSupport()
-    -> std::vector<VkExtensionProperties> {
-  // check for extension support
-
-  uint32_t extensionCount = 0;
-  vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-
-  std::vector<VkExtensionProperties> extensions(extensionCount);
-  vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
-                                         extensions.data());
-  return extensions;
-}
-
 void VulkanComputeManager::printInstanceExtensionSupport() {
-  const auto extensions = queryInstanceExtensionSupport();
+  const auto extensions = vk::enumerateInstanceExtensionProperties();
 
   fmt::print("Available Vulkan extensions:\n");
   for (const auto &extension : extensions) {
-    fmt::print("\t{}\n", extension.extensionName);
+    fmt::print("\t{}\n", static_cast<const char *>(extension.extensionName));
   }
 }
 } // namespace vcm
+
+// NOLINTEND(*-reinterpret-cast)
