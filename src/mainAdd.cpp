@@ -56,7 +56,8 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
 }
 
 namespace fs = std::filesystem;
-template <int NInputBuf> class ShaderExecutor {
+template <int NInputBuf, typename PushConstantT = PushConstantData>
+class ShaderExecutor {
 public:
   ShaderExecutor(fs::path shaderFile, vcm::VulkanComputeManager &cm,
                  const ComputeShaderBuffers<NInputBuf> &buffers)
@@ -73,7 +74,8 @@ public:
 
   void recordCommandBuffer(vcm::VulkanComputeManager &cm,
                            vk::CommandBuffer commandBuffer,
-                           const ComputeShaderBuffers<NInputBuf> &buffers) {
+                           const ComputeShaderBuffers<NInputBuf> &buffers,
+                           const PushConstantT &pushConstant) {
 
     uspam::TimeIt<true> timeit("Recording command buffer");
 
@@ -105,7 +107,7 @@ public:
           {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
     }
 
-    dispatchComputeShader(cm, buffers.inWidth, buffers.inHeight);
+    dispatchComputeShader(cm, buffers.inWidth, buffers.inHeight, pushConstant);
 
     {
       // (Optional) Step 4: Insert another pipeline barrier if needed
@@ -219,7 +221,7 @@ private:
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(PushConstantData);
+    pushConstantRange.size = sizeof(PushConstantT);
 
     vk::PipelineShaderStageCreateInfo shaderStageCreateInfo{};
     shaderStageCreateInfo.stage = vk::ShaderStageFlagBits::eCompute;
@@ -253,7 +255,8 @@ private:
   // Bind command buffer to descriptor set
   // Dispatch command buffer
   void dispatchComputeShader(vcm::VulkanComputeManager &cm, int inputWidth,
-                             int inputHeight) {
+                             int inputHeight,
+                             const PushConstantT &pushConstant) {
     cm.commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute,
                                   resources.pipeline.get());
 
@@ -261,11 +264,9 @@ private:
                                         resources.pipelineLayout.get(), 0,
                                         resources.descriptorSet.get(), {});
 
-    PushConstantData pushConstantData{inputWidth, inputHeight};
-
     cm.commandBuffer.pushConstants(resources.pipelineLayout.get(),
                                    vk::ShaderStageFlagBits::eCompute, 0,
-                                   sizeof(PushConstantData), &pushConstantData);
+                                   sizeof(PushConstantData), &pushConstant);
 
     cm.commandBuffer.dispatch((inputWidth + 15) / 16, (inputHeight + 15) / 16,
                               1);
@@ -311,7 +312,8 @@ int main() {
 
   auto &commandBuffer = cm.commandBuffer;
 
-  shader.recordCommandBuffer(cm, commandBuffer, buffers);
+  PushConstantData pushConstant{WIDTH, HEIGHT};
+  shader.recordCommandBuffer(cm, commandBuffer, buffers, pushConstant);
 
   // Submit the command buffer to the compute queue
   {
