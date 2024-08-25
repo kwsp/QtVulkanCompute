@@ -225,7 +225,7 @@ private:
       vk::DescriptorSetAllocateInfo allocInfo{};
       allocInfo.descriptorPool = cm.descriptorPool;
       allocInfo.descriptorSetCount = 1;
-      allocInfo.pSetLayouts = &*resources.descriptorSetLayout;
+      allocInfo.pSetLayouts = &resources.descriptorSetLayout.get();
 
       auto descriptorSets = cm.device->allocateDescriptorSetsUnique(allocInfo);
       resources.descriptorSet = std::move(descriptorSets.front());
@@ -233,43 +233,37 @@ private:
 
     // Bind device buffers to the descriptor set
     {
-      vk::DescriptorBufferInfo bufferInfo1{};
-      bufferInfo1.buffer = buffers.in[0].buffer.buffer;
-      bufferInfo1.offset = 0;
-      bufferInfo1.range = VK_WHOLE_SIZE;
-
-      vk::DescriptorBufferInfo bufferInfo2{};
-      bufferInfo2.buffer = buffers.in[1].buffer.buffer;
-      bufferInfo2.offset = 0;
-      bufferInfo2.range = VK_WHOLE_SIZE;
-
-      vk::DescriptorBufferInfo outputBufferInfo{};
-      outputBufferInfo.buffer = buffers.out.buffer.buffer;
-      outputBufferInfo.offset = 0;
-      outputBufferInfo.range = VK_WHOLE_SIZE;
-
+      constexpr int TotalBuffers = NInputBuf + 1;
+      std::array<vk::DescriptorBufferInfo, TotalBuffers> bufferInfo{};
       std::array<vk::WriteDescriptorSet, 3> descriptorWrites{};
 
-      descriptorWrites[0].dstSet = resources.descriptorSet.get();
-      descriptorWrites[0].dstBinding = 0;
-      descriptorWrites[0].dstArrayElement = 0;
-      descriptorWrites[0].descriptorType = vk::DescriptorType::eStorageBuffer;
-      descriptorWrites[0].descriptorCount = 1;
-      descriptorWrites[0].pBufferInfo = &bufferInfo1;
+      // NOLINTBEGIN(*-constant-array-index)
+      for (int i = 0; i < NInputBuf; ++i) {
+        bufferInfo[i].buffer = buffers.in[0].buffer.buffer;
+        bufferInfo[i].offset = 0;
+        bufferInfo[i].range = VK_WHOLE_SIZE;
 
-      descriptorWrites[1].dstSet = resources.descriptorSet.get();
-      descriptorWrites[1].dstBinding = 1;
-      descriptorWrites[1].dstArrayElement = 0;
-      descriptorWrites[1].descriptorType = vk::DescriptorType::eStorageBuffer;
-      descriptorWrites[1].descriptorCount = 1;
-      descriptorWrites[1].pBufferInfo = &bufferInfo2;
+        descriptorWrites[i].dstSet = resources.descriptorSet.get();
+        descriptorWrites[i].dstBinding = i;
+        descriptorWrites[i].dstArrayElement = 0;
+        descriptorWrites[i].descriptorType = vk::DescriptorType::eStorageBuffer;
+        descriptorWrites[i].descriptorCount = 1;
+        descriptorWrites[i].pBufferInfo = &bufferInfo[i];
+      }
 
-      descriptorWrites[2].dstSet = resources.descriptorSet.get();
-      descriptorWrites[2].dstBinding = 2;
-      descriptorWrites[2].dstArrayElement = 0;
-      descriptorWrites[2].descriptorType = vk::DescriptorType::eStorageBuffer;
-      descriptorWrites[2].descriptorCount = 1;
-      descriptorWrites[2].pBufferInfo = &outputBufferInfo;
+      int i = NInputBuf;
+      bufferInfo[i].buffer = buffers.out.buffer.buffer;
+      bufferInfo[i].offset = 0;
+      bufferInfo[i].range = VK_WHOLE_SIZE;
+
+      descriptorWrites[i].dstSet = resources.descriptorSet.get();
+      descriptorWrites[i].dstBinding = i;
+      descriptorWrites[i].dstArrayElement = 0;
+      descriptorWrites[i].descriptorType = vk::DescriptorType::eStorageBuffer;
+      descriptorWrites[i].descriptorCount = 1;
+      descriptorWrites[i].pBufferInfo = &bufferInfo[i];
+
+      // NOLINTEND(*-constant-array-index)
 
       cm.device->updateDescriptorSets(descriptorWrites, {});
     }
