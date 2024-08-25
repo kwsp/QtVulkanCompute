@@ -33,7 +33,7 @@ template <int NInputBuffers> struct ComputeShaderBuffers {
   int inWidth;
   int inHeight;
 
-  vk::DeviceSize bufferSize() const {
+  [[nodiscard]] vk::DeviceSize bufferSize() const {
     return inWidth * inHeight * sizeof(float);
   }
 };
@@ -55,7 +55,12 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   return true;
 }
 
+struct WorkGroupSize {
+  int x{16}, y{16}, z{0};
+};
+
 namespace fs = std::filesystem;
+
 template <int NInputBuf, typename PushConstantT = PushConstantData>
 class ShaderExecutor {
 public:
@@ -70,6 +75,7 @@ public:
 
   // private:
   ComputeShaderResources resources{};
+  WorkGroupSize wgSize;
   fs::path shaderFilename;
 
   void recordCommandBuffer(vcm::VulkanComputeManager &cm,
@@ -90,6 +96,7 @@ public:
     {
       // Async copy with barrier
       for (int i = 0; i < NInputBuf; ++i) {
+        // NOLINTNEXTLINE(*-constant-array-index)
         cm.copyBuffer(buffers.in[i].staging.buffer, buffers.in[i].buffer.buffer,
                       buffers.bufferSize(), commandBuffer);
       }
@@ -268,8 +275,8 @@ private:
                                    vk::ShaderStageFlagBits::eCompute, 0,
                                    sizeof(PushConstantData), &pushConstant);
 
-    cm.commandBuffer.dispatch((inputWidth + 15) / 16, (inputHeight + 15) / 16,
-                              1);
+    cm.commandBuffer.dispatch((inputWidth + wgSize.x - 1) / wgSize.x,
+                              (inputHeight + wgSize.y - 1) / wgSize.y, 1);
   }
 };
 
