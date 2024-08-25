@@ -29,6 +29,13 @@ template <int NInputBuffers> struct ComputeShaderBuffers {
 
   std::array<BufferPair, NInputBuffers> in;
   BufferPair out;
+
+  int inWidth;
+  int inHeight;
+
+  vk::DeviceSize bufferSize() const {
+    return inWidth * inHeight * sizeof(float);
+  }
 };
 
 // Question: uniform buffer vs push constant
@@ -77,7 +84,7 @@ void createComputePipeline(vcm::VulkanComputeManager &cm,
 
 void createDescriptorPoolAndSet(vcm::VulkanComputeManager &cm,
                                 ComputeShaderResources &resources,
-                                ComputeShaderBuffers<2> &buffers) {
+                                const ComputeShaderBuffers<2> &buffers) {
 
   // Create descriptor set
   {
@@ -156,64 +163,6 @@ void dispatchComputeShader(vcm::VulkanComputeManager &cm,
   cm.commandBuffer.dispatch((inputWidth + 15) / 16, (inputHeight + 15) / 16, 1);
 }
 
-void recordCommandBuffer(vcm::VulkanComputeManager &cm,
-                         vk::CommandBuffer commandBuffer,
-                         ComputeShaderResources &resources,
-                         ComputeShaderBuffers<2> &buffers,
-                         vk::DeviceSize bufferSize, int width, int height) {
-  uspam::TimeIt<true> timeit("Recording command buffer");
-
-  // Record the command buffer
-  {
-    vk::CommandBufferBeginInfo beginInfo{};
-    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    commandBuffer.begin(beginInfo);
-  }
-
-  // // Copy data from staging to host buffers
-  {
-    // Async copy with barrier
-    cm.copyBuffer(buffers.in[0].staging.buffer, buffers.in[0].buffer.buffer,
-                  bufferSize, commandBuffer);
-    cm.copyBuffer(buffers.in[1].staging.buffer, buffers.in[1].buffer.buffer,
-                  bufferSize, commandBuffer);
-
-    vk::MemoryBarrier memoryBarrier{};
-    memoryBarrier.srcAccessMask =
-        vk::AccessFlagBits::eTransferWrite; // After copying
-    memoryBarrier.dstAccessMask =
-        vk::AccessFlagBits::eShaderRead; // Before compute shader reads
-
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer,      // src: after the transfer op
-        vk::PipelineStageFlagBits::eComputeShader, // dst: before the compute
-                                                   // shader
-        {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
-  }
-
-  dispatchComputeShader(cm, resources, width, height);
-
-  {
-    // (Optional) Step 4: Insert another pipeline barrier if needed
-    vk::MemoryBarrier memoryBarrier{};
-    memoryBarrier.srcAccessMask =
-        vk::AccessFlagBits::eShaderWrite; // After compute shader writes
-    memoryBarrier.dstAccessMask =
-        vk::AccessFlagBits::eTransferRead; // Before transfer reads
-
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader, // src: after compute
-        vk::PipelineStageFlagBits::eTransfer,      // dst: before next transfer
-        {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
-
-    // Copy result back to staging
-    cm.copyBuffer(buffers.out.buffer.buffer, buffers.out.staging.buffer,
-                  bufferSize, commandBuffer);
-  }
-
-  commandBuffer.end();
-}
-
 bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   for (size_t i = 0; i < outputData.size(); ++i) {
     if (outputData[i] != expectedValue) {
@@ -228,14 +177,72 @@ bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
 template <int NInputBuf> class ShaderExecutor {
 public:
   ShaderExecutor(vcm::VulkanComputeManager &cm,
-                 ComputeShaderBuffers<NInputBuf> buffers) {
+                 const ComputeShaderBuffers<NInputBuf> &buffers) {
 
     createDescriptorSet(cm);
     createDescriptorPoolAndSet(cm, resources, buffers);
+    createComputePipeline(cm, resources);
   }
 
   // private:
   ComputeShaderResources resources{};
+
+  void recordCommandBuffer(vcm::VulkanComputeManager &cm,
+                           vk::CommandBuffer commandBuffer,
+                           const ComputeShaderBuffers<NInputBuf> &buffers) {
+
+    uspam::TimeIt<true> timeit("Recording command buffer");
+
+    // Record the command buffer
+    {
+      vk::CommandBufferBeginInfo beginInfo{};
+      beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+      commandBuffer.begin(beginInfo);
+    }
+
+    // // Copy data from staging to host buffers
+    {
+      // Async copy with barrier
+      cm.copyBuffer(buffers.in[0].staging.buffer, buffers.in[0].buffer.buffer,
+                    buffers.bufferSize(), commandBuffer);
+      cm.copyBuffer(buffers.in[1].staging.buffer, buffers.in[1].buffer.buffer,
+                    buffers.bufferSize(), commandBuffer);
+
+      vk::MemoryBarrier memoryBarrier{};
+      memoryBarrier.srcAccessMask =
+          vk::AccessFlagBits::eTransferWrite; // After copying
+      memoryBarrier.dstAccessMask =
+          vk::AccessFlagBits::eShaderRead; // Before compute shader reads
+
+      commandBuffer.pipelineBarrier(
+          vk::PipelineStageFlagBits::eTransfer, // src: after the transfer op
+          vk::PipelineStageFlagBits::eComputeShader, // dst: before the compute
+                                                     // shader
+          {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+    }
+
+    dispatchComputeShader(cm, resources, buffers.inWidth, buffers.inHeight);
+
+    {
+      // (Optional) Step 4: Insert another pipeline barrier if needed
+      vk::MemoryBarrier memoryBarrier{};
+      memoryBarrier.srcAccessMask =
+          vk::AccessFlagBits::eShaderWrite; // After compute shader writes
+      memoryBarrier.dstAccessMask =
+          vk::AccessFlagBits::eTransferRead; // Before transfer reads
+
+      commandBuffer.pipelineBarrier(
+          vk::PipelineStageFlagBits::eComputeShader, // src: after compute
+          vk::PipelineStageFlagBits::eTransfer, // dst: before next transfer
+          {}, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
+      // Copy result back to staging
+      cm.copyBuffer(buffers.out.buffer.buffer, buffers.out.staging.buffer,
+                    buffers.bufferSize(), commandBuffer);
+    }
+
+    commandBuffer.end();
+  }
 
 private:
   void createDescriptorSet(vcm::VulkanComputeManager &cm) {
@@ -276,7 +283,6 @@ int main() {
   Create buffers
   */
   vk::DeviceSize bufferSize = WIDTH * HEIGHT * sizeof(float);
-  ComputeShaderBuffers<2> buffers{};
 
   vcm::VulkanBuffer inputBuf1Staging = cm.createStagingBufferSrc(bufferSize);
   vcm::VulkanBuffer inputBuf1 = cm.createDeviceBufferDst(bufferSize);
@@ -284,16 +290,15 @@ int main() {
   vcm::VulkanBuffer inputBuf2Staging = cm.createStagingBufferSrc(bufferSize);
   vcm::VulkanBuffer inputBuf2 = cm.createDeviceBufferDst(bufferSize);
 
+  ComputeShaderBuffers<2> buffers{};
   auto outputBufStaging = cm.createStagingBufferDst(bufferSize);
   auto outputBuf = cm.createDeviceBufferSrc(bufferSize);
+  buffers.inWidth = WIDTH;
+  buffers.inHeight = HEIGHT;
 
   buffers.in = {{{inputBuf1.ref(), inputBuf1Staging.ref()},
                  {inputBuf2.ref(), inputBuf2Staging.ref()}}};
   buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
-
-  ShaderExecutor<2> shader(cm, buffers);
-
-  createComputePipeline(cm, shader.resources);
 
   // Copy data to staging buffers
   std::vector<float> input1(WIDTH * HEIGHT, 1);
@@ -302,9 +307,12 @@ int main() {
   cm.copyToStagingBuffer<float>(input1, buffers.in[0].staging);
   cm.copyToStagingBuffer<float>(input2, buffers.in[1].staging);
 
+  /* Create shader */
+  ShaderExecutor<2> shader(cm, buffers);
+
   auto &commandBuffer = cm.commandBuffer;
-  recordCommandBuffer(cm, cm.commandBuffer, shader.resources, buffers,
-                      bufferSize, WIDTH, HEIGHT);
+
+  shader.recordCommandBuffer(cm, commandBuffer, buffers);
 
   // Submit the command buffer to the compute queue
   {
