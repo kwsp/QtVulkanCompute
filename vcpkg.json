@@ -12,9 +12,11 @@
     "vulkan-validationlayers",
     {
       "name": "glslang",
-      "features": [
-        "tools"
-      ]
+      "features": ["tools"]
+    },
+    {
+      "name": "opencv4",
+      "features": ["contrib", "dnn", "png", "vulkan", "tbb", "png", "world"]
     }
   ]
 }

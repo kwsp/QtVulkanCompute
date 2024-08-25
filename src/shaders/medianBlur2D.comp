@@ -25,46 +25,57 @@ void main() {
     
     int globalIndex = coords.y * pushConstants.width + coords.x;
 
-    // Load the 3x3 neighborhood into shared memory
+    // Load the central part of the block
     localData[localY][localX] = image1[globalIndex];
 
-    // Load the border pixels into shared memory
-    if (gl_LocalInvocationID.x == 0 && coords.x > 0)
+    // Load the borders (optimized to minimize branching)
+    if (gl_LocalInvocationID.x == 0) {
         localData[localY][localX - 1] = image1[globalIndex - 1];
-    if (gl_LocalInvocationID.x == 15 && coords.x < pushConstants.width - 1)
+    }
+    if (gl_LocalInvocationID.x == 15) {
         localData[localY][localX + 1] = image1[globalIndex + 1];
-    if (gl_LocalInvocationID.y == 0 && coords.y > 0)
+    }
+    if (gl_LocalInvocationID.y == 0) {
         localData[localY - 1][localX] = image1[globalIndex - pushConstants.width];
-    if (gl_LocalInvocationID.y == 15 && coords.y < pushConstants.height - 1)
+    }
+    if (gl_LocalInvocationID.y == 15) {
         localData[localY + 1][localX] = image1[globalIndex + pushConstants.width];
+    }
 
-    // Load the corners
-    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0 && coords.x > 0 && coords.y > 0)
+    // Load corners only if needed (further optimization)
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 0) {
         localData[localY - 1][localX - 1] = image1[globalIndex - pushConstants.width - 1];
-    if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 0 && coords.x < pushConstants.width - 1 && coords.y > 0)
+    }
+    if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 0) {
         localData[localY - 1][localX + 1] = image1[globalIndex - pushConstants.width + 1];
-    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 15 && coords.x > 0 && coords.y < pushConstants.height - 1)
+    }
+    if (gl_LocalInvocationID.x == 0 && gl_LocalInvocationID.y == 15) {
         localData[localY + 1][localX - 1] = image1[globalIndex + pushConstants.width - 1];
-    if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 15 && coords.x < pushConstants.width - 1 && coords.y < pushConstants.height - 1)
+    }
+    if (gl_LocalInvocationID.x == 15 && gl_LocalInvocationID.y == 15) {
         localData[localY + 1][localX + 1] = image1[globalIndex + pushConstants.width + 1];
+    }
 
-    // Synchronize to make sure all threads have loaded their data into shared memory
+    // Synchronize to ensure all threads have loaded their data into shared memory
     barrier();
 
     // Array to hold the 3x3 neighborhood values
     float neighborhood[9];
-    int n = 0;
 
     // Gather the 3x3 neighborhood from shared memory
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            neighborhood[n++] = localData[localY + y][localX + x];
-        }
-    }
+    neighborhood[0] = localData[localY - 1][localX - 1];
+    neighborhood[1] = localData[localY - 1][localX];
+    neighborhood[2] = localData[localY - 1][localX + 1];
+    neighborhood[3] = localData[localY][localX - 1];
+    neighborhood[4] = localData[localY][localX];
+    neighborhood[5] = localData[localY][localX + 1];
+    neighborhood[6] = localData[localY + 1][localX - 1];
+    neighborhood[7] = localData[localY + 1][localX];
+    neighborhood[8] = localData[localY + 1][localX + 1];
 
-    // Sort the 9 values to find the median
-    for (int i = 0; i < 9; i++) {
-        for (int j = i + 1; j < 9; j++) {
+    // Sort the 9 values to find the median (optimized selection sort)
+    for (int i = 0; i < 9; ++i) {
+        for (int j = i + 1; j < 9; ++j) {
             if (neighborhood[i] > neighborhood[j]) {
                 float temp = neighborhood[i];
                 neighborhood[i] = neighborhood[j];

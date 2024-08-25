@@ -1,6 +1,10 @@
 #include "vcm/vcm.hpp"
 #include <cmath>
 #include <fmt/core.h>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -10,20 +14,42 @@ struct PushConstantData {
   int height;
 };
 
-bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
-  for (size_t i = 0; i < outputData.size(); ++i) {
-    if (outputData[i] != expectedValue) {
-      fmt::println("Mismatch at index {}; expected {}, but got {}", i,
-                   expectedValue, outputData[i]);
-      return false;
+bool verifyOutput(const cv::Mat &mat, const cv::Mat &expect) {
+  for (int row = 0; mat.rows; ++row) {
+    for (int col = 0; mat.cols; ++col) {
+      if (mat.at<float>(col, row) != expect.at<float>(col, row)) {
+        fmt::println("Mismatch at ({}, {}); expected {}, but got {}", col, row,
+                     expect.at<float>(col, row), mat.at<float>(col, row));
+        return false;
+      }
     }
   }
   return true;
 }
 
 int main() {
-  const uint32_t WIDTH = 512;
-  const uint32_t HEIGHT = 512;
+
+  //   std::string filename = cv::samples::findFile("lena.jpg");
+  std::string filename = "/Users/tnie/Downloads/viper.jpg";
+  cv::Mat matIn;
+
+  matIn = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+
+  uint32_t WIDTH = 512;
+  uint32_t HEIGHT = 512;
+  if (!matIn.empty()) {
+    matIn.convertTo(matIn, CV_32F);
+    matIn = matIn / 255;
+
+    WIDTH = matIn.cols;
+    HEIGHT = matIn.rows;
+
+  } else {
+    matIn = cv::Mat(HEIGHT, WIDTH, CV_32FC1);
+    cv::randu(matIn, 0.0F, 0.1F);
+  }
+  cv::imshow("original", matIn);
+  cv::waitKey();
 
   vcm::VulkanComputeManager cm;
 
@@ -45,9 +71,12 @@ int main() {
   buffers.out = {outputBuf.ref(), outputBufStaging.ref()};
 
   // Copy data to staging buffers
-  std::vector<float> input1(WIDTH * HEIGHT, 3);
 
-  cm.copyToStagingBuffer<float>(input1, buffers.in[0].staging);
+  assert(matIn.isContinuous());
+
+  cm.copyToStagingBuffer<float>(
+      std::span<float>{(float *)matIn.data, WIDTH * HEIGHT},
+      buffers.in[0].staging);
 
   /* Create shader */
   vcm::ShaderExecutor<1, PushConstantData> shader("shaders/medianBlur2D.spv",
@@ -55,7 +84,8 @@ int main() {
 
   auto &commandBuffer = cm.commandBuffer;
 
-  PushConstantData pushConstant{WIDTH, HEIGHT};
+  PushConstantData pushConstant{static_cast<int>(WIDTH),
+                                static_cast<int>(HEIGHT)};
   shader.recordCommandBuffer(cm, commandBuffer, buffers, pushConstant);
 
   // Submit the command buffer to the compute queue
@@ -70,8 +100,23 @@ int main() {
     cm.queue.waitIdle();
   }
 
-  std::vector<float> outputData(WIDTH * HEIGHT);
-  cm.copyFromStagingBuffer<float>(buffers.out.staging, outputData);
+  cv::Mat matOut(HEIGHT, WIDTH, CV_32FC1);
+  cm.copyFromStagingBuffer<float>(
+      buffers.out.staging,
+      std::span<float>((float *)matOut.data, WIDTH * HEIGHT));
+
+  cv::imshow("Vulkan blur", matOut);
+  cv::waitKey();
+
+  cv::Mat matCvBlur;
+  {
+    vcm::TimeIt<true> timeit("OpenCV blue");
+    cv::medianBlur(matIn, matCvBlur, 3);
+  }
+  verifyOutput(matOut, matCvBlur);
+
+  cv::imshow("CV blur", matCvBlur);
+  cv::waitKey();
 
   //   {
   //     bool isCorrect = verifyOutput(outputData, 7.0F);
