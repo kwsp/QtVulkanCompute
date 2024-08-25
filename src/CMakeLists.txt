@@ -89,3 +89,20 @@ set_target_properties(${NAME} PROPERTIES
     CXX_STANDARD 20
     CXX_EXTENSIONS OFF
 )
+
+set(NAME medianBlur)
+add_executable(${NAME}
+  mainMedianBlur2D.cpp
+  vcm/VulkanComputeManager.hpp
+  vcm/VulkanComputeManager.cpp
+)
+target_link_libraries(${NAME} PRIVATE
+  fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+)
+add_dependencies(${NAME} compile_shaders)
+set_target_properties(${NAME} PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
+)
