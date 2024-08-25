@@ -27,7 +27,6 @@ void main() {
         float v1 = image1[index];
         float v2 = image2[index];
 
-        // result[index] = sqrt(v1 * v1 + v2 * v2);
-        result[index] = v1;
+        result[index] = v1 + v2;
     }
 }

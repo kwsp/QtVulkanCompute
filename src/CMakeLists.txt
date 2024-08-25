@@ -38,34 +38,18 @@ set_target_properties(${EXE_NAME} PROPERTIES
 )
 
 
-function(create_test_executable NAME)
-  add_executable(${NAME}
-    ${ARGN}
-  )
-
-  target_link_libraries(${NAME} PRIVATE
-    fmt::fmt
-    armadillo
-    Vulkan::Vulkan
-  )
-
-  add_dependencies(${NAME} compile_shaders)
-
-  set_target_properties(${NAME} PROPERTIES
-      CXX_STANDARD 20
-      CXX_EXTENSIONS OFF
-  )
-endfunction()
-
-create_test_executable(add
+add_executable(add
   mainAdd.cpp
   vcm/VulkanComputeManager.hpp
   vcm/VulkanComputeManager.cpp
 )
-
-
-create_test_executable(addImage2D
-  mainAddImage2D.cpp
-  vcm/VulkanComputeManager.hpp
-  vcm/VulkanComputeManager.cpp
+target_link_libraries(add PRIVATE
+  fmt::fmt
+  armadillo
+  Vulkan::Vulkan
+)
+add_dependencies(add compile_shaders)
+set_target_properties(add PROPERTIES
+    CXX_STANDARD 20
+    CXX_EXTENSIONS OFF
 )

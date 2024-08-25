@@ -1,9 +1,10 @@
 set(SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-# Find glslangValidator
+# find glslangValidator
 find_package(glslang CONFIG REQUIRED)
 find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+
 
 set(SHADERS
     warpPolarCompute.comp.glsl
@@ -21,35 +22,27 @@ foreach(SHADER ${SHADERS})
     get_filename_component(FILE_NAME ${SHADER} NAME_WE)
     set(SPIRV ${SHADER_BINARY_DIR}/${FILE_NAME}.spv)
 
-    # Add custom command to compile each shader
-    add_custom_command(
-        OUTPUT ${SPIRV}
+    # Add custom command for each shader to generate the SPIR-V file
+    add_custom_target(${FILE_NAME}_shader
         COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SOURCE_DIR}/${SHADER} -o ${SPIRV}
-        DEPENDS ${SHADER_SOURCE_DIR}/${SHADER}
+        DEPENDS ${SHADER}
         COMMENT "Compiling ${SHADER} to SPIR-V"
         VERBATIM
     )
 
-    # Create a target that depends on the SPIR-V file being generated
-    add_custom_target(${FILE_NAME}_shader DEPENDS ${SPIRV})
-
     add_dependencies(compile_shaders ${FILE_NAME}_shader)
+
 
     # Copy the compiled SPIR-V files to the build configuration directories
     foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
         set(CONFIG_BINARY_DIR ${SRC_BINARY_DIR}/${CONFIG}/shaders)
-        set(CONFIG_SPIRV ${CONFIG_BINARY_DIR}/${FILE_NAME}.spv)
+        set(CONFIG_SPIRV ${CONFIG_BINARY_DIR}/${FILENAME})
 
-        add_custom_command(
-            OUTPUT ${CONFIG_SPIRV}
+        add_custom_target(${FILE_NAME}_${CONFIG}_shader
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CONFIG_BINARY_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy ${SPIRV} ${CONFIG_SPIRV}
-            DEPENDS ${SPIRV}
-            COMMENT "Copying ${SPIRV} to ${CONFIG} configuration"
+            DEPENDS ${FILE_NAME}_shader
         )
-
-        # Create a target for copying the SPIR-V file
-        add_custom_target(${FILE_NAME}_${CONFIG}_shader DEPENDS ${CONFIG_SPIRV})
 
         add_dependencies(compile_shaders ${FILE_NAME}_${CONFIG}_shader)
     endforeach()
