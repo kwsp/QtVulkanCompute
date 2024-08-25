@@ -257,11 +257,15 @@ private:
       return descriptorSetLayoutBinding;
     };
 
-    std::array<vk::DescriptorSetLayoutBinding, 3> descriptorSetLayoutBindings{{
-        makeComputeDescriptorSetLayoutBinding(0),
-        makeComputeDescriptorSetLayoutBinding(1),
-        makeComputeDescriptorSetLayoutBinding(2),
-    }};
+    constexpr int TotalBuffers = NInputBuf + 1;
+
+    std::array<vk::DescriptorSetLayoutBinding, TotalBuffers>
+        descriptorSetLayoutBindings{};
+
+    for (int i = 0; i < TotalBuffers; ++i) {
+      // NOLINTNEXTLINE(*-constant-array-index)
+      descriptorSetLayoutBindings[i] = makeComputeDescriptorSetLayoutBinding(i);
+    }
 
     // Descriptor set layout
     vk::DescriptorSetLayoutCreateInfo createInfo{};
