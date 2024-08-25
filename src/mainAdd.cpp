@@ -1,12 +1,5 @@
-#include "vcm/VulkanComputeManager.hpp"
 #include "vcm/vcm.hpp"
-#include "vulkan/vulkan_enums.hpp"
-#include "vulkan/vulkan_structs.hpp"
-#include <cstddef>
 #include <fmt/core.h>
-#include <iostream>
-#include <span>
-#include <stdexcept>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -19,8 +12,8 @@ struct PushConstantData {
 bool verifyOutput(const std::vector<float> &outputData, float expectedValue) {
   for (size_t i = 0; i < outputData.size(); ++i) {
     if (outputData[i] != expectedValue) {
-      std::cerr << "Mismatch at index " << i << ": expected " << expectedValue
-                << ", but got " << outputData[i] << "\n";
+      fmt::println("Mismatch at index {}; expected {}, but got {}", i,
+                   expectedValue, outputData[i]);
       return false;
     }
   }
@@ -91,9 +84,9 @@ int main() {
   {
     bool isCorrect = verifyOutput(outputData, 3.0F);
     if (isCorrect) {
-      std::cout << "The output is correct!\n";
+      fmt::println("The output is correct!");
     } else {
-      std::cout << "The output is incorrect.\n";
+      fmt::println("The output is incorrect.");
     }
   }
 
@@ -109,9 +102,9 @@ int main() {
   {
     bool isCorrect = verifyOutput(outputCPU, 3.0F);
     if (isCorrect) {
-      std::cout << "The output is correct!\n";
+      fmt::println("The output is correct!");
     } else {
-      std::cout << "The output is incorrect.\n";
+      fmt::println("The output is incorrect.");
     }
   }
 
