@@ -1,7 +1,6 @@
 set(EXE_NAME main)
 
 find_package(fmt CONFIG REQUIRED)
-find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 find_package(Armadillo CONFIG REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -27,9 +26,6 @@ target_link_libraries(${EXE_NAME} PRIVATE
   fmt::fmt
   armadillo
   Vulkan::Vulkan
-  Qt6::Core
-  Qt6::Gui
-  Qt6::Widgets
 )
 
 add_dependencies(${EXE_NAME} compile_shaders)

@@ -5,9 +5,6 @@
   "dependencies": [
     "fmt",
     "armadillo",
-    {
-      "name": "qtbase"
-    },
     "vulkan",
     "vulkan-validationlayers",
     "glm",
